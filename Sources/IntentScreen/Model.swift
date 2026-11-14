@@ -1,0 +1,141 @@
+import AppKit
+import Foundation
+import IntentCore
+
+/// UI state + talking to the daemon. The screen enforces nothing; it only asks.
+final class AppModel: ObservableObject {
+    @Published var status: DaemonStatus?
+    @Published var daemonReachable = true
+    @Published var selectedMode: String?
+    @Published var intentText = ""
+    @Published var errorText: String?
+    @Published var infoText: String?
+    @Published var busy = false
+    @Published var now = Date()
+
+    // Wi-Fi: temporarily shows the menu bar so the system Wi-Fi menu can be used.
+    @Published var wifiUntil: Date?
+
+    // Session panel
+    @Published var extensionReason = ""
+    @Published var confirmEnd = false
+
+    // Dev-build emergency off
+    @Published var showEmergency = false
+    @Published var adminUser = NSUserName()
+    @Published var adminPassword = ""
+
+    private let ipcQueue = DispatchQueue(label: "intentmode.screen.ipc")
+    private var polling = false
+
+    var wifiActive: Bool { (wifiUntil ?? .distantPast) > now }
+
+    func poll() {
+        guard !polling else { return }
+        polling = true
+        ipcQueue.async {
+            let r = try? IPCClient.send(IPCRequest(cmd: "status"), timeoutSeconds: 5)
+            DispatchQueue.main.async {
+                self.polling = false
+                if let s = r?.status {
+                    self.status = s
+                    self.daemonReachable = true
+                } else {
+                    self.daemonReachable = false
+                }
+            }
+        }
+    }
+
+    func send(_ req: IPCRequest, completion: @escaping (IPCResponse) -> Void) {
+        busy = true
+        ipcQueue.async {
+            let r: IPCResponse
+            do { r = try IPCClient.send(req, timeoutSeconds: 30) } catch {
+                r = .fail("\(error)")
+            }
+            DispatchQueue.main.async {
+                self.busy = false
+                completion(r)
+                self.poll()
+            }
+        }
+    }
+
+    func notifyLaunch(pid: pid_t) {
+        ipcQueue.async { _ = try? IPCClient.send(IPCRequest(cmd: "app_launched", pid: pid), timeoutSeconds: 3) }
+    }
+
+    // MARK: actions
+
+    func startSession() {
+        guard let mode = selectedMode else { return }
+        errorText = nil
+        send(IPCRequest(cmd: "start", mode: mode, intent: intentText)) { r in
+            if r.ok {
+                self.intentText = ""
+                self.selectedMode = nil
+                self.launch(r.launch ?? [])
+            } else {
+                self.errorText = r.error
+            }
+        }
+    }
+
+    func endSession() {
+        send(IPCRequest(cmd: "end", reason: "ended early from the timer window")) { r in
+            self.confirmEnd = false
+            if !r.ok { self.errorText = r.error }
+        }
+    }
+
+    func requestExtension() {
+        send(IPCRequest(cmd: "extend_request")) { r in
+            if !r.ok { self.errorText = r.error }
+        }
+    }
+
+    func confirmExtension() {
+        send(IPCRequest(cmd: "extend_confirm", reason: extensionReason)) { r in
+            if r.ok { self.extensionReason = ""; self.errorText = nil } else { self.errorText = r.error }
+        }
+    }
+
+    func emergencyOff() {
+        send(IPCRequest(cmd: "emergency_off", username: adminUser, password: adminPassword)) { r in
+            self.adminPassword = ""
+            if r.ok { self.infoText = r.message; self.showEmergency = false } else { self.errorText = r.error }
+        }
+    }
+
+    /// Opens the mode's apps. For Chrome with arguments (e.g. --app=…) when Chrome is already
+    /// running, the arguments are passed to the running instance by starting its binary directly.
+    func launch(_ items: [LaunchItem]) {
+        for item in items {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.bundleId) else {
+                errorText = "App not installed: \(item.bundleId)"
+                continue
+            }
+            let args = item.args ?? []
+            let running = !NSRunningApplication.runningApplications(withBundleIdentifier: item.bundleId).isEmpty
+            if running && !args.isEmpty, let exe = Bundle(url: url)?.executableURL {
+                let p = Process()
+                p.executableURL = exe
+                p.arguments = args
+                try? p.run()
+            } else {
+                let cfg = NSWorkspace.OpenConfiguration()
+                cfg.arguments = args
+                cfg.activates = true
+                NSWorkspace.shared.openApplication(at: url, configuration: cfg) { _, err in
+                    if let err { DispatchQueue.main.async { self.errorText = "Could not open \(item.bundleId): \(err.localizedDescription)" } }
+                }
+            }
+        }
+    }
+}
+
+func formatRemaining(_ seconds: Int) -> String {
+    let s = max(0, seconds)
+    return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+}

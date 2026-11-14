@@ -1,0 +1,271 @@
+{
+  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app).",
+  "always_allowed_bundle_ids": [
+    "com.apple.finder"
+  ],
+  "app_kill_grace_seconds": 5,
+  "blocklist_files": [],
+  "chrome_bundle_id": "com.google.Chrome",
+  "chrome_forbidden_flags": [
+    "--host-resolver-rules",
+    "--proxy-server",
+    "--proxy-pac-url",
+    "--proxy-auto-detect",
+    "--load-extension",
+    "--disable-extensions-except"
+  ],
+  "doh_block_ips": [
+    "1.1.1.1",
+    "1.0.0.1",
+    "1.1.1.2",
+    "1.0.0.2",
+    "8.8.8.8",
+    "8.8.4.4",
+    "9.9.9.9",
+    "149.112.112.112",
+    "208.67.222.222",
+    "208.67.220.220",
+    "94.140.14.14",
+    "94.140.15.15",
+    "76.76.2.0",
+    "76.76.10.0",
+    "185.228.168.9",
+    "2606:4700:4700::1111",
+    "2606:4700:4700::1001",
+    "2001:4860:4860::8888",
+    "2001:4860:4860::8844",
+    "2620:fe::fe",
+    "2620:fe::9"
+  ],
+  "domain_groups": {
+    "book_domains": [],
+    "google_docs": [
+      "=docs.google.com",
+      "=docs.googleusercontent.com",
+      "clients6.google.com",
+      "=content.googleapis.com",
+      "=www.googleapis.com"
+    ],
+    "google_search": [
+      "=www.google.com",
+      "=google.com",
+      "=www.google.de",
+      "=google.de",
+      "=encrypted-tbn0.gstatic.com"
+    ],
+    "google_signin": [
+      "=accounts.google.com",
+      "=accounts.youtube.com",
+      "=ssl.gstatic.com",
+      "=www.gstatic.com",
+      "=fonts.gstatic.com",
+      "=fonts.googleapis.com",
+      "=apis.google.com",
+      "=oauth2.googleapis.com",
+      "=ogs.google.com",
+      "=lh3.googleusercontent.com"
+    ]
+  },
+  "exempt_users": [],
+  "extension_min_reason_words": 5,
+  "extension_minutes": 10,
+  "extension_wait_seconds": 60,
+  "flags": {
+    "claude_mode_allow_google_search": false
+  },
+  "intent_min_words": 8,
+  "learn_max_minutes": 30,
+  "locked_allowed_domains": [
+    "=time.apple.com"
+  ],
+  "modes": [
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.anthropic.claudefordesktop",
+          "note": "Claude desktop app. Add team_id after checking it with: intentmode inspect-app /Applications/Claude.app"
+        },
+        {
+          "bundle_id": "com.apple.Terminal",
+          "team_id": "apple"
+        },
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        }
+      ],
+      "conditional_domains": [
+        {
+          "domains": [
+            "@google_search"
+          ],
+          "flag": "claude_mode_allow_google_search"
+        }
+      ],
+      "daily_limit": 3,
+      "description": "Claude, coding docs, GitHub and package registries",
+      "domains": [
+        "claude.ai",
+        "claude.com",
+        "claudeusercontent.com",
+        "anthropic.com",
+        "challenges.cloudflare.com",
+        "github.com",
+        "githubusercontent.com",
+        "githubassets.com",
+        "registry.npmjs.org",
+        "npmjs.com",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "developer.apple.com",
+        "docs.python.org",
+        "developer.mozilla.org",
+        "stackoverflow.com",
+        "sstatic.net",
+        "@google_signin"
+      ],
+      "id": "claude",
+      "launch": [
+        {
+          "bundle_id": "com.anthropic.claudefordesktop"
+        }
+      ],
+      "minutes": 30,
+      "name": "Claude / vibe coding"
+    },
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        }
+      ],
+      "daily_limit": 2,
+      "description": "Your journal in Google Docs",
+      "domains": [
+        "@google_docs",
+        "@google_signin"
+      ],
+      "id": "journal",
+      "launch": [
+        {
+          "args": [
+            "--app=https://docs.google.com/document/d/1lNiGGYw-zEfiTLhbUjIbEKeIvqBZISLLCZDr3s1fI74/edit"
+          ],
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 20,
+      "name": "Journal"
+    },
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        },
+        {
+          "bundle_id": "com.apple.finder",
+          "team_id": "apple"
+        }
+      ],
+      "daily_limit": 2,
+      "description": "Download a book (fill in domain_groups.book_domains)",
+      "domains": [
+        "@book_domains"
+      ],
+      "id": "book",
+      "launch": [
+        {
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 10,
+      "name": "Get a book"
+    },
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        }
+      ],
+      "daily_limit": 2,
+      "description": "Airbnb, Booking.com and your planning docs",
+      "domains": [
+        "airbnb.com",
+        "airbnb.de",
+        "muscache.com",
+        "booking.com",
+        "bstatic.com",
+        "@google_docs",
+        "@google_signin"
+      ],
+      "id": "travel",
+      "launch": [
+        {
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 30,
+      "name": "Travel research"
+    }
+  ],
+  "never_allowed_bundle_ids": [
+    "com.apple.Safari",
+    "com.apple.SafariTechnologyPreview",
+    "org.mozilla.firefox",
+    "org.mozilla.firefoxdeveloperedition",
+    "org.mozilla.nightly",
+    "com.brave.Browser",
+    "com.microsoft.edgemac",
+    "com.operasoftware.Opera",
+    "com.operasoftware.OperaGX",
+    "com.vivaldi.Vivaldi",
+    "company.thebrowser.Browser",
+    "company.thebrowser.dia",
+    "app.zen-browser.zen",
+    "org.chromium.Chromium",
+    "com.google.Chrome.canary",
+    "com.google.Chrome.beta",
+    "com.google.Chrome.dev",
+    "org.torproject.torbrowser",
+    "com.kagi.kagimacOS",
+    "com.duckduckgo.macos.browser",
+    "com.wireguard.macos",
+    "net.openvpn.connect.app",
+    "com.nordvpn.macos",
+    "ch.protonvpn.mac",
+    "com.expressvpn.ExpressVPN",
+    "com.tunnelbear.mac.TunnelBear",
+    "io.tailscale.ipn.macos",
+    "com.cloudflare.1dot1dot1dot1.macos"
+  ],
+  "pf_allow_inbound_ssh": true,
+  "pf_restrict_upstream_to_root": true,
+  "schema_version": 1,
+  "session_allowed_domains": [
+    "=ocsp.apple.com",
+    "=ocsp2.apple.com"
+  ],
+  "system_path_prefixes": [
+    "/System/Library/",
+    "/Library/Apple/",
+    "/usr/libexec/",
+    "/usr/sbin/",
+    "/usr/bin/",
+    "/System/iOSSupport/",
+    "/System/Volumes/Preboot/Cryptexes/OS/"
+  ],
+  "upstream_dns": [
+    "1.1.1.3",
+    "1.0.0.3",
+    "2606:4700:4700::1113",
+    "2606:4700:4700::1003"
+  ],
+  "warning_seconds": 120
+}

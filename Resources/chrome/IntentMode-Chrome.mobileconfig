@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Intent Mode: Google Chrome policies (computer-wide).
+  Install: double-click, then approve in System Settings → General → Device Management. Needs an admin password,
+  and so does removing it. Check the result at chrome://policy.
+
+  ExtensionInstallBlocklist "*" also DISABLES extensions you already have. To keep one, put its ID
+  (from chrome://extensions with Developer mode on) into ExtensionInstallAllowlist below, then reinstall the profile.
+-->
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadType</key>
+			<string>com.google.Chrome</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>com.intentmode.chrome.policies</string>
+			<key>PayloadUUID</key>
+			<string>35D0C918-05C4-4F82-845F-BAE2928F40D5</string>
+			<key>PayloadDisplayName</key>
+			<string>Google Chrome policies</string>
+			<key>PayloadEnabled</key>
+			<true/>
+
+			<!-- Chrome must use the system resolver (ours), never its own DNS-over-HTTPS. -->
+			<key>DnsOverHttpsMode</key>
+			<string>off</string>
+			<!-- No proxies (a proxy could tunnel around the allowlist). -->
+			<key>ProxyMode</key>
+			<string>direct</string>
+			<!-- 1 = Incognito disabled. -->
+			<key>IncognitoModeAvailability</key>
+			<integer>1</integer>
+			<key>BrowserGuestModeEnabled</key>
+			<false/>
+			<key>ForceGoogleSafeSearch</key>
+			<true/>
+			<!-- 2 = YouTube strict Restricted Mode. -->
+			<key>ForceYouTubeRestrict</key>
+			<integer>2</integer>
+			<key>ExtensionInstallBlocklist</key>
+			<array>
+				<string>*</string>
+			</array>
+			<key>ExtensionInstallAllowlist</key>
+			<array/>
+			<key>URLBlocklist</key>
+			<array>
+				<string>chrome://flags</string>
+				<string>chrome://net-internals</string>
+				<string>chrome://net-export</string>
+			</array>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>Intent Mode – Chrome policies</string>
+	<key>PayloadDescription</key>
+	<string>Turns off Chrome's own DNS-over-HTTPS, proxies, Incognito, guest mode and new extensions; forces SafeSearch and YouTube Restricted Mode.</string>
+	<key>PayloadIdentifier</key>
+	<string>com.intentmode.chrome</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>0D8154DA-8D1A-4C8A-B53B-DEAE75F18D96</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>PayloadScope</key>
+	<string>System</string>
+</dict>
+</plist>
