@@ -24,10 +24,11 @@ public struct IPCRequest: Codable {
 
     public init(cmd: String, mode: String? = nil, intent: String? = nil, reason: String? = nil,
                 path: String? = nil, apply: Bool? = nil, pid: Int32? = nil,
-                username: String? = nil, password: String? = nil) {
+                username: String? = nil, password: String? = nil, note: String? = nil, noteId: String? = nil) {
         self.cmd = cmd; self.mode = mode; self.intent = intent; self.reason = reason
         self.path = path; self.apply = apply; self.pid = pid
         self.username = username; self.password = password
+        self.note = note; self.noteId = noteId
     }
 }
 
