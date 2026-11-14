@@ -74,8 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            guard let self, self.uiMode == .kiosk else { return }
-            self.rebuildKioskWindows()
+            // Deferred: this notification also fires *while* we switch modes (the Dock and menu bar
+            // coming back changes the screen layout). Rebuilding the lock windows right then would
+            // cover the session timer with a stale lock screen.
+            DispatchQueue.main.async {
+                guard let self, self.uiMode == .kiosk else { return }
+                self.rebuildKioskWindows()
+            }
         }
         // React to status changes right away instead of waiting for the next tick.
         model.$status.receive(on: RunLoop.main).sink { [weak self] _ in
@@ -124,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showKiosk(force: Bool) {
         if uiMode != .kiosk {
+            ScreenLog.write("UI: showing lock screen")
             panel?.orderOut(nil)
             panel = nil
             panelHost = nil
@@ -184,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSession() {
         if uiMode != .session {
+            uiMode = .session   // set first: the calls below trigger screen-change notifications
+            ScreenLog.write("UI: showing session timer")
             kioskWindows.forEach { $0.orderOut(nil) }
             kioskWindows.removeAll()
             NSApp.presentationOptions = []
@@ -193,8 +201,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             p.contentView = host
             panel = p
             panelHost = host
-            uiMode = .session
             model.wifiUntil = nil
+        }
+        // Safety net: no lock windows may exist during a session.
+        if !kioskWindows.isEmpty {
+            ScreenLog.write("UI: removing \(kioskWindows.count) stray lock window(s) during session")
+            kioskWindows.forEach { $0.orderOut(nil) }
+            kioskWindows.removeAll()
         }
         guard let p = panel, let host = panelHost else { return }
         // Keep the panel sized to its content and pinned to the top-right corner.
