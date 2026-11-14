@@ -13,11 +13,15 @@ struct LockView: View {
     var body: some View {
         ZStack {
             bg.ignoresSafeArea()
-            VStack(spacing: 28) {
-                Spacer(minLength: 40)
+            VStack(spacing: 18) {
+                Spacer(minLength: 16)
                 Text("What are you here for?")
-                    .font(.system(size: 42, weight: .semibold))
+                    .font(.system(size: 36, weight: .semibold))
                     .foregroundColor(.white)
+                if let st = model.status {
+                    Text("Today: \(st.todayMinutes) min · \(st.todaySessions) session\(st.todaySessions == 1 ? "" : "s")")
+                        .font(.system(size: 13)).foregroundColor(.white.opacity(0.55))
+                }
 
                 if !model.daemonReachable {
                     Text("Waiting for the Intent Mode daemon…")
@@ -33,6 +37,12 @@ struct LockView: View {
                 if let st = model.status {
                     if st.pendingModeId != nil {
                         PendingStartView(model: model, status: st)
+                    } else if st.escapeStage == "challenge" {
+                        ChallengeView(model: model, status: st)
+                    } else if st.escapeStage == "waiting" {
+                        EscapeWaitView(model: model, status: st)
+                    } else if let id = model.selectedMode, let mode = st.modes.first(where: { $0.id == id }), mode.escapeHatch {
+                        EscapeReasonEntry(model: model, mode: mode, minWords: st.escapeReasonMinWords)
                     } else if let id = model.selectedMode, let mode = st.modes.first(where: { $0.id == id }) {
                         IntentEntry(model: model, mode: mode, minWords: mode.intentMinWords)
                     } else {
@@ -51,7 +61,11 @@ struct LockView: View {
                 Footer(model: model)
             }
             .frame(maxWidth: 760)
-            .padding(40)
+            .padding(.horizontal, 40).padding(.vertical, 28)
+            if model.showWeek {
+                Color.black.opacity(0.6).ignoresSafeArea()
+                WeekView(model: model)
+            }
         }
     }
 }
@@ -61,7 +75,7 @@ struct ModeGrid: View {
     let modes: [ModeStatus]
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             ForEach(modes) { m in
                 Button {
                     model.errorText = nil
@@ -89,7 +103,7 @@ struct ModeGrid: View {
                         }
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 20).padding(.vertical, 14)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 12).fill(card))
                     .opacity(m.available ? 1 : 0.4)
@@ -260,7 +274,11 @@ struct Footer: View {
                     Button("Join Wi-Fi…") { model.wifiUntil = Date().addingTimeInterval(120) }
                         .help("Shows the menu bar for 2 minutes so you can pick a network from the Wi-Fi menu.")
                 }
+                Button("This week") { model.openWeek() }
                 Spacer()
+                if model.status?.chromePolicyMissing == true {
+                    ChromeWarning(model: model)
+                }
                 if model.status?.devBuild == true && !model.showEmergency && model.status?.testEndsAt == nil {
                     Button("Emergency off…") { model.showEmergency = true }
                         .foregroundColor(.red.opacity(0.8))
@@ -269,6 +287,193 @@ struct Footer: View {
                     .font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
             }
         }
+    }
+}
+
+/// Small corner button: the Chrome policy profile isn't installed.
+struct ChromeWarning: View {
+    @ObservedObject var model: AppModel
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Text("⚠︎ Chrome").font(.system(size: 11)).foregroundColor(.orange)
+        }
+        .buttonStyle(.plain)
+        .help("The Chrome filter profile isn't installed")
+        .popover(isPresented: $open) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Chrome filter profile not installed").font(.headline)
+                Text("Without it Chrome can use its own secure DNS, Incognito and any extension, and its adult-site filter is off.")
+                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                Text("To install: start **Maintenance**, then click **Install Chrome profile** in the timer window and approve it in System Settings.")
+                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14).frame(width: 320)
+        }
+    }
+}
+
+// MARK: - Open session (escape hatch)
+
+struct EscapeReasonEntry: View {
+    @ObservedObject var model: AppModel
+    let mode: ModeStatus
+    let minWords: Int
+
+    var body: some View {
+        let words = TextUtil.wordCount(model.escapeReasonText)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(mode.name) · step 1 of 3").font(.system(size: 22, weight: .medium)).foregroundColor(.white)
+            Text("Why do you need open access, and why can't another mode do it? At least \(minWords) words, then press Return. Next: retype a random text exactly, then a 10-minute wait.")
+                .font(.system(size: 13)).foregroundColor(.white.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
+            NoPasteTextEditor(text: $model.escapeReasonText, onSubmit: {
+                if words >= minWords && !model.busy { model.requestEscape(modeId: mode.id) } else { NSSound.beep() }
+            })
+            .frame(height: 130).clipShape(RoundedRectangle(cornerRadius: 10))
+            HStack {
+                Text("\(words) / \(minWords) words").font(.system(size: 13).monospacedDigit())
+                    .foregroundColor(words >= minWords ? .green : .white.opacity(0.6))
+                Spacer()
+                Button("Back") { model.selectedMode = nil; model.errorText = nil }.keyboardShortcut(.cancelAction)
+                Button("Continue") { model.requestEscape(modeId: mode.id) }.disabled(words < minWords || model.busy)
+            }
+        }
+        .padding(20).background(RoundedRectangle(cornerRadius: 14).fill(card))
+    }
+}
+
+struct ChallengeView: View {
+    @ObservedObject var model: AppModel
+    let status: DaemonStatus
+
+    var body: some View {
+        let target = status.escapeChallenge ?? ""
+        let typed = model.challengeInput
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(status.escapeModeName ?? "Open session") · step 2 of 3").font(.system(size: 22, weight: .medium)).foregroundColor(.white)
+            Text("Type this exactly. Pasting is off, and one typo starts you over.")
+                .font(.system(size: 13)).foregroundColor(.white.opacity(0.7))
+            // Already-typed part in green, the rest in white.
+            (Text(String(target.prefix(typed.count))).foregroundColor(.green)
+             + Text(String(target.dropFirst(typed.count))).foregroundColor(.white))
+                .font(.system(size: 17, design: .monospaced))
+                .textSelection(.disabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.35)))
+            NoPasteTextEditor(text: $model.challengeInput, fontSize: 17, monospaced: true)
+                .frame(height: 90).clipShape(RoundedRectangle(cornerRadius: 10))
+                .onChange(of: model.challengeInput) { _, new in model.challengeChanged(new) }
+            HStack {
+                Text("\(typed.count) / \(target.count)").font(.system(size: 13).monospacedDigit()).foregroundColor(.white.opacity(0.6))
+                if let m = model.challengeMessage { Text(m).font(.system(size: 13)).foregroundColor(.orange) }
+                Spacer()
+                Button("Cancel") { model.cancelEscape() }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(20).background(RoundedRectangle(cornerRadius: 14).fill(card))
+    }
+}
+
+struct EscapeWaitView: View {
+    @ObservedObject var model: AppModel
+    let status: DaemonStatus
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("\(status.escapeModeName ?? "Open session") · step 3 of 3").font(.system(size: 15)).foregroundColor(.white.opacity(0.6))
+            Text("Opens in \(formatRemaining(status.escapeReadyIn ?? 0))")
+                .font(.system(size: 30, weight: .semibold).monospacedDigit()).foregroundColor(.white)
+            Text("Your reason:").font(.system(size: 13, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+            Text("“\(status.escapeReason ?? "")”").font(.system(size: 16)).foregroundColor(.white)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Text("Still worth it? Cancelling doesn't use up one of your open sessions.")
+                .font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
+            Button("Cancel") { model.cancelEscape() }.keyboardShortcut(.cancelAction)
+        }
+        .padding(24).frame(maxWidth: .infinity).background(RoundedRectangle(cornerRadius: 14).fill(card))
+    }
+}
+
+// MARK: - Weekly overview
+
+struct WeekView: View {
+    @ObservedObject var model: AppModel
+
+    private func hm(_ m: Int) -> String { m >= 60 ? "\(m / 60) h \(m % 60) min" : "\(m) min" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("This week").font(.system(size: 26, weight: .semibold))
+                Spacer()
+                Button("Close") { model.showWeek = false }.keyboardShortcut(.cancelAction)
+            }
+            if let s = model.weekStats {
+                HStack(spacing: 28) {
+                    stat(hm(s.totalMinutes), "total")
+                    stat("\(s.sessionCount)", "sessions")
+                    stat("\(s.openSessionsUsed)\(s.openSessionsLimit.map { " / \($0)" } ?? "")", "open sessions")
+                    stat(hm(s.lastWeekMinutes), "last week")
+                }
+                // Minutes per day, Monday to Sunday.
+                let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                let peak = max(1, s.perDayMinutes.max() ?? 1)
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(0..<7, id: \.self) { i in
+                        VStack(spacing: 4) {
+                            Text("\(s.perDayMinutes[i])").font(.system(size: 10).monospacedDigit()).opacity(0.6)
+                            RoundedRectangle(cornerRadius: 3).fill(accent)
+                                .frame(width: 34, height: max(2, CGFloat(s.perDayMinutes[i]) / CGFloat(peak) * 70))
+                            Text(days[i]).font(.system(size: 11)).opacity(0.7)
+                        }
+                    }
+                }
+                Divider()
+                Text("Per mode").font(.system(size: 14, weight: .semibold))
+                ForEach(s.perMode) { m in
+                    HStack {
+                        Text(m.name)
+                        Spacer()
+                        Text("\(m.sessions)× · \(hm(m.minutes))").monospacedDigit().opacity(0.8)
+                    }.font(.system(size: 13))
+                }
+                if !s.longest.isEmpty {
+                    Text("Longest sessions").font(.system(size: 14, weight: .semibold))
+                    ForEach(s.longest) { x in
+                        Text("\(x.minutes) min · \(x.modeName) — \(x.intent)").font(.system(size: 12)).lineLimit(1).opacity(0.85)
+                    }
+                }
+                Text("All intents (\(s.sessions.count))\(s.extensions > 0 ? " · \(s.extensions) extended" : "")\(s.openRequestsCancelled > 0 ? " · \(s.openRequestsCancelled) open-session requests cancelled" : "")")
+                    .font(.system(size: 14, weight: .semibold))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(s.sessions) { x in
+                            Text("\(Self.day(x.started)) · \(x.modeName) · \(x.minutes) min — \(x.intent)")
+                                .font(.system(size: 12)).opacity(0.85).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }.frame(maxHeight: 160)
+            } else {
+                Text("Loading…").opacity(0.6)
+            }
+        }
+        .foregroundColor(.white)
+        .padding(24)
+        .frame(width: 640)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.11)))
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(size: 20, weight: .semibold).monospacedDigit())
+            Text(label).font(.system(size: 11)).opacity(0.6)
+        }
+    }
+
+    private static func day(_ t: Double) -> String {
+        let f = DateFormatter(); f.dateFormat = "EEE HH:mm"; return f.string(from: Date(timeIntervalSince1970: t))
     }
 }
 
@@ -305,6 +510,10 @@ struct SessionView: View {
                let notes = st?.notes, !notes.isEmpty {
                 Text("Your notes:").font(.system(size: 11, weight: .semibold)).opacity(0.8)
                 NotesBox(model: model, notes: notes, compact: true)
+            }
+            if st?.state == "session", st?.chromePolicyMissing == true,
+               st?.modes.first(where: { $0.id == st?.modeId })?.id == "maintenance" {
+                Button("Install Chrome profile") { model.openChromeProfile() }.controlSize(.small)
             }
             if st?.state == "session" { ExtensionControls(model: model) }
             if let e = model.errorText {

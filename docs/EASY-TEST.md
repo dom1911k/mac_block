@@ -52,7 +52,13 @@ Just play with it. Here are good things to check:
     the timer window. After Research ends, its tile says "Available again at …" (15-minute cooldown).
 13. Start a session and don't touch the keyboard or mouse for 5 minutes: the timer warns you in the last minute,
     then the session ends by itself.
-14. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
+14. Click **This week** (bottom left): minutes per day and per mode, all your intents, and the longest sessions.
+    The lock screen also shows "Today: … min" under the title.
+15. Pick **Open session**: give a 25-word reason, retype the random text exactly (one typo starts you over),
+    then wait 10 minutes. You can cancel at any time. Afterwards the open web, System Settings and Terminal work.
+16. Pick **Maintenance**: System Settings and the App Store open. If the small orange **⚠︎ Chrome** appears in the
+    bottom corner, click **Install Chrome profile** in the timer window.
+17. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
 
 Also worth trying once: start a test and **restart the Mac** in the middle of it. After the restart Intent Mode is
 gone and the internet works.

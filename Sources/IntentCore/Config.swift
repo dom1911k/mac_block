@@ -138,6 +138,10 @@ public struct ModeConfig: Codable {
     public var idleEndMinutes: Int?
     /// If set, the mode can only be started inside one of these windows; sessions end with the window.
     public var schedule: [ScheduleWindow]?
+    /// The open session (escape hatch): started only through the reason → retype challenge → wait steps.
+    public var escapeHatch: Bool?
+
+    public var isEscapeHatch: Bool { escapeHatch == true }
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, apps, launch, minutes
@@ -153,6 +157,7 @@ public struct ModeConfig: Codable {
         case cooldownMinutes = "cooldown_minutes"
         case idleEndMinutes = "idle_end_minutes"
         case schedule
+        case escapeHatch = "escape_hatch"
     }
 
     public init(from decoder: Decoder) throws {
@@ -175,6 +180,7 @@ public struct ModeConfig: Codable {
         cooldownMinutes = try c.decodeIfPresent(Int.self, forKey: .cooldownMinutes)
         idleEndMinutes = try c.decodeIfPresent(Int.self, forKey: .idleEndMinutes)
         schedule = try c.decodeIfPresent([ScheduleWindow].self, forKey: .schedule)
+        escapeHatch = try c.decodeIfPresent(Bool.self, forKey: .escapeHatch)
     }
 
     /// The end of the schedule window `date` is in, or nil if outside every window. Unscheduled modes: distantFuture.
@@ -223,6 +229,12 @@ public struct IntentConfig: Codable {
     /// End a session after this many minutes without keyboard/mouse activity (0 = never).
     public var idleEndMinutes: Int = 5
     public var bedtime: Bedtime?
+    // Open session (escape hatch) friction.
+    public var escapeReasonMinWords: Int = 25
+    public var escapeChallengeLength: Int = 150
+    public var escapeWaitMinutes: Int = 10
+    /// Times when the open session can't be started at all (empty by default).
+    public var quietHours: [ScheduleWindow] = []
     public var systemPathPrefixes: [String] = ["/System/Library/", "/Library/Apple/", "/usr/libexec/", "/usr/sbin/", "/usr/bin/"]
     public var alwaysAllowedBundleIds: [String] = []
     public var neverAllowedBundleIds: [String] = ["com.apple.Safari"]
@@ -255,6 +267,10 @@ public struct IntentConfig: Codable {
         case forceSafeSearch = "force_safe_search"
         case idleEndMinutes = "idle_end_minutes"
         case bedtime
+        case escapeReasonMinWords = "escape_reason_min_words"
+        case escapeChallengeLength = "escape_challenge_length"
+        case escapeWaitMinutes = "escape_wait_minutes"
+        case quietHours = "quiet_hours"
         case systemPathPrefixes = "system_path_prefixes"
         case alwaysAllowedBundleIds = "always_allowed_bundle_ids"
         case neverAllowedBundleIds = "never_allowed_bundle_ids"
@@ -293,6 +309,10 @@ public struct IntentConfig: Codable {
         forceSafeSearch = try v(.forceSafeSearch, d.forceSafeSearch)
         idleEndMinutes = try v(.idleEndMinutes, d.idleEndMinutes)
         bedtime = try c.decodeIfPresent(Bedtime.self, forKey: .bedtime)
+        escapeReasonMinWords = try v(.escapeReasonMinWords, d.escapeReasonMinWords)
+        escapeChallengeLength = try v(.escapeChallengeLength, d.escapeChallengeLength)
+        escapeWaitMinutes = try v(.escapeWaitMinutes, d.escapeWaitMinutes)
+        quietHours = try v(.quietHours, d.quietHours)
         systemPathPrefixes = try v(.systemPathPrefixes, d.systemPathPrefixes)
         alwaysAllowedBundleIds = try v(.alwaysAllowedBundleIds, d.alwaysAllowedBundleIds)
         neverAllowedBundleIds = try v(.neverAllowedBundleIds, d.neverAllowedBundleIds)
@@ -384,6 +404,8 @@ public struct IntentConfig: Codable {
                 errs.append("bedtime: allowed mode '\(id)' doesn't exist")
             }
         }
+        for w in quietHours where !w.isValid { errs.append("quiet_hours: window \(w.days) \(w.start)–\(w.end) is not valid") }
+        if escapeChallengeLength < 10 || escapeChallengeLength > 1000 { errs.append("escape_challenge_length must be 10–1000") }
         var ids = Set<String>()
         for m in modes {
             if m.id.isEmpty || m.id.contains(where: { !($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }) {

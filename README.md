@@ -198,6 +198,15 @@ input), `cooldown_minutes` per mode (Research: 15 minutes before it can be start
 **Scheduled modes** (like *Reselling*): `"schedule": [{"days": ["sun"], "start": "10:00", "end": "17:00"}]`. The mode
 can only be started inside a window, and the session ends when the window closes.
 
+**Open session (escape hatch):** a mode with `"escape_hatch": true` can only be started through three steps: a reason
+of `escape_reason_min_words` (25), an exact retype of a random `escape_challenge_length` (150) character text where one
+typo starts you over, and a cancellable `escape_wait_minutes` (10) wait that shows your reason. `quiet_hours` blocks
+it completely at set times (empty by default). **Maintenance** gives System Settings, the App Store and Apple's update
+servers, for macOS updates and installing the Chrome profile.
+
+**Usage overview:** "This week" on the lock screen, `intentmode week` in Terminal, and an automatic review the first
+time the lock screen shows on a Sunday. It's built from `sessions.jsonl`.
+
 Other keys: `intent_min_words`, `warning_seconds`, `extension_*`, `daily_limit`/`minutes` per mode,
 `flags.claude_mode_allow_google_search`, `system_path_prefixes` (which macOS components are always allowed),
 `always_allowed_bundle_ids`, `never_allowed_bundle_ids`, `chrome_forbidden_flags`, `doh_block_ips`, `exempt_users`

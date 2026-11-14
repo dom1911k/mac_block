@@ -1,5 +1,5 @@
 {
-  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app). Modes with \"open_web\": true allow every site except the adult filter and their blocked_domains. Adult content: blocklist_files (big public lists, refreshed weekly, add-only) + always_blocked_domains (your own groups, e.g. adult_extra) apply in EVERY mode; add your own sites to domain_groups.adult_extra or to blocklists/custom.txt. A wrongly blocked site can go into blocklist_exceptions. bedtime: only allowed_modes can be used between start and end; other sessions end at bedtime. idle_end_minutes: sessions end after that long without keyboard/mouse input. cooldown_minutes (per mode): wait time after a session of that mode.",
+  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app). Modes with \"open_web\": true allow every site except the adult filter and their blocked_domains. Adult content: blocklist_files (big public lists, refreshed weekly, add-only) + always_blocked_domains (your own groups, e.g. adult_extra) apply in EVERY mode; add your own sites to domain_groups.adult_extra or to blocklists/custom.txt. A wrongly blocked site can go into blocklist_exceptions. bedtime: only allowed_modes can be used between start and end; other sessions end at bedtime. idle_end_minutes: sessions end after that long without keyboard/mouse input. cooldown_minutes (per mode): wait time after a session of that mode. The open session (escape_hatch mode) needs a 25+ word reason, an exact retype of a random 150-character text and a 10-minute wait; quiet_hours (e.g. [{\"days\":[\"mon\",\"tue\"],\"start\":\"20:00\",\"end\":\"23:00\"}]) block it completely.",
   "always_allowed_bundle_ids": [
     "com.apple.finder"
   ],
@@ -132,6 +132,19 @@
       "webtoonxyz.com",
       "yande.re"
     ],
+    "apple_updates": [
+      "apple.com",
+      "icloud.com",
+      "icloud-content.com",
+      "mzstatic.com",
+      "cdn-apple.com",
+      "aaplimg.com",
+      "apple-cloudkit.com",
+      "apple-livephotoskit.com",
+      "apple.news",
+      "apple-dns.net",
+      "itunes.com"
+    ],
     "book_domains": [],
     "bypass": [
       "4everproxy.com",
@@ -249,6 +262,9 @@
       "=drive.google.com"
     ]
   },
+  "escape_challenge_length": 150,
+  "escape_reason_min_words": 25,
+  "escape_wait_minutes": 10,
   "exempt_users": [],
   "extension_min_reason_words": 5,
   "extension_minutes": 10,
@@ -430,6 +446,65 @@
       "open_web": true,
       "start_delay_seconds": 60,
       "weekly_limit": 5
+    },
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.apple.systempreferences",
+          "team_id": "apple"
+        },
+        {
+          "bundle_id": "com.apple.AppStore",
+          "team_id": "apple"
+        }
+      ],
+      "description": "System Settings, App Store and Apple's update servers — for macOS updates and installing the Chrome profile",
+      "domains": [
+        "@apple_updates"
+      ],
+      "id": "maintenance",
+      "intent_min_words": 5,
+      "launch": [
+        {
+          "bundle_id": "com.apple.systempreferences"
+        }
+      ],
+      "minutes": 30,
+      "name": "Maintenance",
+      "weekly_limit": 2
+    },
+    {
+      "allow_extension": false,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        },
+        {
+          "bundle_id": "com.apple.systempreferences",
+          "team_id": "apple"
+        },
+        {
+          "bundle_id": "com.apple.Terminal",
+          "team_id": "apple"
+        }
+      ],
+      "blocked_domains": [
+        "@distraction"
+      ],
+      "description": "Escape hatch: open web + System Settings + Terminal (reason, retype, 10-minute wait)",
+      "escape_hatch": true,
+      "id": "open",
+      "launch": [
+        {
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 20,
+      "name": "Open session",
+      "open_web": true,
+      "weekly_limit": 3
     }
   ],
   "never_allowed_bundle_ids": [
@@ -464,6 +539,7 @@
   ],
   "pf_allow_inbound_ssh": true,
   "pf_restrict_upstream_to_root": true,
+  "quiet_hours": [],
   "schema_version": 1,
   "session_allowed_domains": [
     "=ocsp.apple.com",

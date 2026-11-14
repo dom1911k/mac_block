@@ -98,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.now = Date()
         model.poll()
         model.checkPendingStart()
+        model.checkEscapeConfirm()
+        model.maybeShowSundayReview()
         enforceUI()
     }
 

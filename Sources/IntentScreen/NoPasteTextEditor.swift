@@ -29,6 +29,7 @@ struct NoPasteTextEditor: NSViewRepresentable {
     var focusOnAppear = true
     /// Called when Return is pressed (instead of inserting a new line). ⌥Return still adds a line break.
     var onSubmit: (() -> Void)?
+    var monospaced = false
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -42,7 +43,9 @@ struct NoPasteTextEditor: NSViewRepresentable {
         tv.isRichText = false
         tv.importsGraphics = false
         tv.allowsUndo = true
-        tv.font = .systemFont(ofSize: fontSize)
+        tv.font = monospaced ? .monospacedSystemFont(ofSize: fontSize, weight: .regular) : .systemFont(ofSize: fontSize)
+        tv.isContinuousSpellCheckingEnabled = false
+        tv.isAutomaticTextCompletionEnabled = false
         tv.textColor = .white
         tv.insertionPointColor = .white
         tv.backgroundColor = NSColor(white: 0.16, alpha: 1)

@@ -33,6 +33,19 @@ final class Daemon {
     /// A start waiting out its mode's start_delay_seconds (monotonic `readyAt`).
     private struct PendingStart { let modeId: String; let intent: String; let readyAt: TimeInterval; let uid: uid_t }
     private var pendingStart: PendingStart?
+
+    /// Open session (escape hatch) steps: reason → retype challenge → wait → start.
+    private struct EscapeFlow {
+        enum Stage: String { case challenge, waiting }
+        let modeId: String
+        let reason: String
+        let challenge: String
+        var stage: Stage
+        var readyAt: TimeInterval?
+    }
+    private var escape: EscapeFlow?
+    private var chromePolicyMissing = false
+    private var statsCache: (at: Date, stats: WeekStats)?
     private var timer: DispatchSourceTimer?
 
     private let box: PolicyBox
@@ -169,6 +182,7 @@ final class Daemon {
             pf.watchdog()
         }
         if tickCount % 30 == 0 { pf.expire() }
+        if tickCount % 60 == 5 { checkChromePolicy() }
         if tickCount % 60 == 0 {
             var inSession = false
             if case .session = phase { inSession = true }
@@ -306,6 +320,23 @@ final class Daemon {
             return IPCResponse(ok: true, status: status(uid: uid))
         case "start":
             return start(modeId: r.mode ?? "", intent: r.intent ?? "", uid: uid)
+        case "stats":
+            var r = IPCResponse(ok: true)
+            r.stats = weekStats()
+            return r
+        case "escape_request":
+            return escapeRequest(modeId: r.mode ?? "", reason: r.reason ?? "")
+        case "escape_challenge":
+            return escapeChallenge(typed: r.intent ?? "")
+        case "escape_confirm":
+            return escapeConfirm(uid: uid)
+        case "escape_cancel":
+            if let e = escape {
+                Log.info("open session request cancelled (stage: \(e.stage.rawValue))")
+                SessionLog.write(["event": "escape_cancelled", "mode": e.modeId, "stage": e.stage.rawValue, "reason": e.reason])
+            }
+            escape = nil
+            return .success("Cancelled.")
         case "note_add":
             let text = (r.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return .fail("Empty note.") }
@@ -370,6 +401,19 @@ final class Daemon {
         }
     }
 
+    /// Is the Chrome policy profile installed? (Checked off the daemon queue every minute.)
+    private func checkChromePolicy() {
+        DispatchQueue.global().async {
+            let managed = FileManager.default.fileExists(atPath: "/Library/Managed Preferences/com.google.Chrome.plist")
+            let listed = run("/usr/bin/profiles", ["list", "-all"], timeout: 15).out.contains("com.intentmode.chrome")
+            let missing = !(managed || listed)
+            self.queue.async {
+                if missing != self.chromePolicyMissing { Log.info("Chrome policy profile installed: \(!missing)") }
+                self.chromePolicyMissing = missing
+            }
+        }
+    }
+
     private func idleLimitSeconds(_ m: ModeConfig) -> Int? {
         let minutes = m.idleEndMinutes ?? config.idleEndMinutes
         return minutes > 0 ? minutes * 60 : nil
@@ -383,6 +427,10 @@ final class Daemon {
         let now = Date()
         if let b = config.bedtime, let end = b.endIfActive(at: now), !b.allowedModes.contains(m.id) {
             return (false, "Bedtime until \(Self.clock(end))")
+        }
+        if m.isEscapeHatch, let q = config.quietHours.first(where: { $0.endIfActive(at: now) != nil }),
+           let end = q.endIfActive(at: now) {
+            return (false, "Quiet hours until \(Self.clock(end))")
         }
         if m.scheduleEnd(at: now) == nil {
             return (false, "Only " + (m.schedule ?? []).map { $0.label }.joined(separator: ", "))
@@ -412,6 +460,7 @@ final class Daemon {
             ms.openWeb = m.isOpenWeb
             ms.intentMinWords = config.intentMinWords(for: m)
             ms.startDelaySeconds = m.startDelaySeconds ?? 0
+            ms.escapeHatch = m.isEscapeHatch
             return ms
         }
         let exempt = userName(uid).map { config.exemptUsers.contains($0) } ?? false
@@ -420,6 +469,19 @@ final class Daemon {
                               extensionMinutes: config.extensionMinutes, exempt: exempt, notice: notice)
         st.testEndsAt = testEndsAt?.timeIntervalSince1970
         st.notes = pstate.notes ?? []
+        st.chromePolicyMissing = chromePolicyMissing
+        st.escapeReasonMinWords = config.escapeReasonMinWords
+        if let e = escape {
+            st.escapeStage = e.stage.rawValue
+            st.escapeModeName = config.mode(e.modeId)?.name ?? e.modeId
+            st.escapeReason = e.reason
+            if e.stage == .challenge { st.escapeChallenge = e.challenge }
+            if let r = e.readyAt { st.escapeReadyIn = max(0, Int((r - ProcessInfo.processInfo.systemUptime).rounded(.up))) }
+        }
+        if statsCache == nil || Date().timeIntervalSince(statsCache!.at) > 10 { statsCache = (Date(), weekStats()) }
+        let today = StatsBuilder.today(statsCache!.stats)
+        st.todayMinutes = today.minutes
+        st.todaySessions = today.sessions
         if let b = config.bedtime, let end = b.endIfActive(at: Date()) {
             let names = b.allowedModes.compactMap { config.mode($0)?.name }
             st.bedtimeNotice = "Bedtime until \(Self.clock(end))" + (names.isEmpty ? " — everything is locked" : " — only \(names.joined(separator: ", "))")
@@ -473,6 +535,7 @@ final class Daemon {
     private func start(modeId: String, intent: String, uid: uid_t) -> IPCResponse {
         guard case .locked = phase else { return .fail("A session is already running.") }
         guard let mode = config.mode(modeId) else { return .fail("Unknown mode '\(modeId)'.") }
+        if mode.isEscapeHatch { return .fail("\(mode.name) has its own steps (reason, retype, wait) — start it from the intent screen.") }
         let text = intent.trimmingCharacters(in: .whitespacesAndNewlines)
         let words = TextUtil.wordCount(text)
         let minWords = config.intentMinWords(for: mode)
@@ -491,6 +554,67 @@ final class Daemon {
             return r
         }
         return beginSession(mode: mode, intent: text, uid: uid)
+    }
+
+    // MARK: open session (escape hatch)
+
+    private static func makeChallenge(length: Int) -> String {
+        // Letters, digits and punctuation; look-alikes (l/1/I, O/0) and quotes left out so it's fair to type.
+        let chars = Array("abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!?.,;:-+=*#%&()")
+        var rng = SystemRandomNumberGenerator()
+        return String((0..<length).map { _ in chars.randomElement(using: &rng)! })
+    }
+
+    private func escapeRequest(modeId: String, reason: String) -> IPCResponse {
+        guard case .locked = phase else { return .fail("A session is already running.") }
+        guard escape == nil else { return .fail("An open session request is already in progress.") }
+        guard let mode = config.mode(modeId), mode.isEscapeHatch else { return .fail("Unknown open-session mode.") }
+        let (ok, why) = availability(mode)
+        guard ok else { return .fail("\(mode.name) is not available: \(why ?? "")") }
+        let text = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = TextUtil.wordCount(text)
+        guard words >= config.escapeReasonMinWords else {
+            return .fail("Give a reason of at least \(config.escapeReasonMinWords) words (you have \(words)).")
+        }
+        escape = EscapeFlow(modeId: mode.id, reason: text, challenge: Self.makeChallenge(length: config.escapeChallengeLength),
+                            stage: .challenge, readyAt: nil)
+        Log.info("open session requested")
+        SessionLog.write(["event": "escape_requested", "mode": mode.id, "reason": text])
+        return .success("Now retype the text exactly.")
+    }
+
+    private func escapeChallenge(typed: String) -> IPCResponse {
+        guard var e = escape, e.stage == .challenge else { return .fail("No retype step is waiting.") }
+        guard typed == e.challenge else { return .fail("That doesn't match. Start the retype again.") }
+        e.stage = .waiting
+        e.readyAt = ProcessInfo.processInfo.systemUptime + Double(config.escapeWaitMinutes) * 60
+        escape = e
+        Log.info("open session: challenge passed, waiting \(config.escapeWaitMinutes) min")
+        return .success("Waiting \(config.escapeWaitMinutes) minutes.")
+    }
+
+    private func escapeConfirm(uid: uid_t) -> IPCResponse {
+        guard let e = escape, e.stage == .waiting, let ready = e.readyAt else { return .fail("Nothing is waiting to start.") }
+        guard ProcessInfo.processInfo.systemUptime >= ready else { return .fail("The waiting time isn't over yet.") }
+        escape = nil
+        guard let mode = config.mode(e.modeId) else { return .fail("Unknown mode.") }
+        let (ok, why) = availability(mode)
+        guard ok else { return .fail("\(mode.name) is not available: \(why ?? "")") }
+        SessionLog.write(["event": "escape_started", "mode": mode.id, "reason": e.reason])
+        return beginSession(mode: mode, intent: e.reason, uid: uid)
+    }
+
+    // MARK: stats
+
+    private func weekStats() -> WeekStats {
+        let log = (try? String(contentsOfFile: Paths.sessionLog, encoding: .utf8)) ?? ""
+        var names: [String: String] = [:]
+        for m in config.modes { names[m.id] = m.name }
+        var running: StatsBuilder.Running?
+        if case .session = phase, let s = pstate.session { running = .init(mode: s.modeId, intent: s.intent, started: s.startedAt) }
+        let escapeModes = Set(config.modes.filter { $0.isEscapeHatch }.map { $0.id })
+        let limit = config.modes.first(where: { $0.isEscapeHatch })?.weeklyLimit
+        return StatsBuilder.build(log: log, modeNames: names, escapeModes: escapeModes, escapeLimit: limit, running: running)
     }
 
     /// Second step of a delayed start, after the pause.
@@ -544,6 +668,7 @@ final class Daemon {
         pstate.save()
         phase = .locked
         extensionRequestedAt = nil
+        statsCache = nil
         applyPolicy(reason: "session ended: \(reason)")
     }
 

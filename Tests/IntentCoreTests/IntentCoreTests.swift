@@ -218,6 +218,38 @@ final class ScheduleTests: XCTestCase {
     }
 }
 
+final class StatsTests: XCTestCase {
+    func testWeekOverview() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        // Week of Monday 2026-11-09; "now" is Saturday 2026-11-14 12:00 UTC.
+        let now = ISO8601DateFormatter().date(from: "2026-11-14T12:00:00Z")!
+        let log = """
+        {"event":"session_end","mode":"journal","intent":"write about the week","started":"2026-11-10T08:00:00Z","at":"2026-11-10T08:20:00Z","extended":false,"ended_early":false}
+        {"event":"session_end","mode":"research","intent":"car rental lisbon","started":"2026-11-14T09:00:00Z","at":"2026-11-14T09:25:00Z","extended":true,"ended_early":false}
+        {"event":"session_end","mode":"open","intent":"update macos","started":"2026-11-12T20:00:00Z","at":"2026-11-12T20:05:00Z","extended":false,"ended_early":true}
+        {"event":"session_end","mode":"journal","intent":"last week","started":"2026-11-05T08:00:00Z","at":"2026-11-05T08:30:00Z"}
+        {"event":"escape_cancelled","at":"2026-11-13T10:00:00Z"}
+        garbage line
+        """
+        let r = StatsBuilder.Running(mode: "claude", intent: "build stuff", started: now.addingTimeInterval(-600))
+        let s = StatsBuilder.build(log: log, modeNames: ["journal": "Journal", "research": "Research", "open": "Open session", "claude": "Claude"],
+                                   escapeModes: ["open"], escapeLimit: 3, running: r, now: now, calendar: cal)
+        XCTAssertEqual(s.totalMinutes, 20 + 25 + 5 + 10)
+        XCTAssertEqual(s.sessionCount, 4)
+        XCTAssertEqual(s.perMode.first?.id, "research")
+        XCTAssertEqual(s.perDayMinutes, [0, 20, 0, 5, 0, 35, 0])
+        XCTAssertEqual(s.openSessionsUsed, 1)
+        XCTAssertEqual(s.openRequestsCancelled, 1)
+        XCTAssertEqual(s.extensions, 1)
+        XCTAssertEqual(s.endedEarly, 1)
+        XCTAssertEqual(s.longest.map { $0.minutes }, [25, 20, 10])
+        XCTAssertEqual(s.lastWeekMinutes, 30)
+        let t = StatsBuilder.today(s, now: now, calendar: cal)
+        XCTAssertEqual(t.minutes, 35)
+        XCTAssertEqual(t.sessions, 2)
+    }
+}
+
 final class MiscTests: XCTestCase {
     func testVersions() {
         XCTAssertTrue(VersionCompare.isNewer("0.1.1", than: "0.1.0"))

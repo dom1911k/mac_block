@@ -12,6 +12,7 @@ Everyday:
   intentmode status                       Show the current state and today's usage
   intentmode start <mode> <intent…>       Start a session (the intent screen does this normally)
   intentmode end [reason…]                End the running session early
+  intentmode week                         Usage overview for this week
 
 Updates:
   intentmode update propose <path>        Install a new build (folder or .tar.gz from scripts/build.sh)
@@ -93,6 +94,15 @@ case "start":
         sleep(UInt32(wait))
         call(IPCRequest(cmd: "start_confirm"))
     }
+
+case "week":
+    let r = call(IPCRequest(cmd: "stats"))
+    guard let s = r.stats else { break }
+    print("This week: \(s.totalMinutes) min in \(s.sessionCount) sessions (last week: \(s.lastWeekMinutes) min)")
+    print("Per day (Mon–Sun): \(s.perDayMinutes.map(String.init).joined(separator: " "))")
+    print("Open sessions: \(s.openSessionsUsed)\(s.openSessionsLimit.map { "/\($0)" } ?? "")  ·  extended: \(s.extensions)  ·  ended early: \(s.endedEarly)")
+    for m in s.perMode { print("  \(m.name): \(m.sessions)× \(m.minutes) min") }
+    for x in s.sessions { print("  - \(x.modeName), \(x.minutes) min: \(x.intent)") }
 
 case "end":
     call(IPCRequest(cmd: "end", reason: args.count > 1 ? args[1...].joined(separator: " ") : "ended from the command line"))

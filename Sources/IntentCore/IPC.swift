@@ -53,6 +53,7 @@ public struct ModeStatus: Codable, Identifiable {
     public var openWeb: Bool = false
     public var intentMinWords: Int = 8
     public var startDelaySeconds: Int = 0
+    public var escapeHatch: Bool = false
 
     public init(id: String, name: String, description: String?, minutes: Int, dailyLimit: Int?,
                 usedToday: Int, available: Bool, unavailableReason: String?) {
@@ -98,6 +99,18 @@ public struct DaemonStatus: Codable {
     /// Seconds without input during a session, and when the session ends because of it.
     public var idleSeconds: Int?
     public var idleLimitSeconds: Int?
+    /// Open-session steps in progress: "challenge" (retype the string) or "waiting" (cooldown).
+    public var escapeStage: String?
+    public var escapeModeName: String?
+    public var escapeReason: String?
+    public var escapeChallenge: String?
+    public var escapeReadyIn: Int?
+    public var escapeReasonMinWords: Int = 25
+    /// True when the Chrome policy profile isn't installed (the filter is weaker without it).
+    public var chromePolicyMissing: Bool = false
+    /// Today at a glance.
+    public var todayMinutes: Int = 0
+    public var todaySessions: Int = 0
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,
                 endsAt: Double? = nil, remainingSeconds: Int? = nil, warning: Bool = false,
@@ -122,6 +135,7 @@ public struct IPCResponse: Codable {
     public var lines: [String]?
     /// Set when `start` has to wait: confirm with `start_confirm` after this many seconds.
     public var waitSeconds: Int?
+    public var stats: WeekStats?
 
     public init(ok: Bool, error: String? = nil, message: String? = nil, status: DaemonStatus? = nil,
                 launch: [LaunchItem]? = nil, lines: [String]? = nil) {
@@ -131,6 +145,57 @@ public struct IPCResponse: Codable {
 
     public static func fail(_ e: String) -> IPCResponse { IPCResponse(ok: false, error: e) }
     public static func success(_ m: String? = nil) -> IPCResponse { IPCResponse(ok: true, message: m) }
+}
+
+public struct ModeUsage: Codable, Identifiable {
+    public var id: String
+    public var name: String
+    public var minutes: Int
+    public var sessions: Int
+    public init(id: String, name: String, minutes: Int, sessions: Int) {
+        self.id = id; self.name = name; self.minutes = minutes; self.sessions = sessions
+    }
+}
+
+public struct SessionSummary: Codable, Identifiable {
+    public var id: String { "\(started)-\(mode)" }
+    public var mode: String
+    public var modeName: String
+    public var minutes: Int
+    public var intent: String
+    public var started: Double
+    public var extended: Bool
+    public var endedEarly: Bool
+    public init(mode: String, modeName: String, minutes: Int, intent: String, started: Double, extended: Bool, endedEarly: Bool) {
+        self.mode = mode; self.modeName = modeName; self.minutes = minutes; self.intent = intent
+        self.started = started; self.extended = extended; self.endedEarly = endedEarly
+    }
+}
+
+/// Usage overview for one week (Monday 00:00 – now).
+public struct WeekStats: Codable {
+    public var weekStart: Double
+    public var totalMinutes: Int
+    public var sessionCount: Int
+    public var perMode: [ModeUsage]
+    public var perDayMinutes: [Int]        // Mon … Sun
+    public var openSessionsUsed: Int
+    public var openSessionsLimit: Int?
+    public var openRequestsCancelled: Int
+    public var extensions: Int
+    public var endedEarly: Int
+    public var longest: [SessionSummary]
+    public var sessions: [SessionSummary]  // newest first
+    public var lastWeekMinutes: Int
+    public init(weekStart: Double, totalMinutes: Int, sessionCount: Int, perMode: [ModeUsage], perDayMinutes: [Int],
+                openSessionsUsed: Int, openSessionsLimit: Int?, openRequestsCancelled: Int, extensions: Int,
+                endedEarly: Int, longest: [SessionSummary], sessions: [SessionSummary], lastWeekMinutes: Int) {
+        self.weekStart = weekStart; self.totalMinutes = totalMinutes; self.sessionCount = sessionCount
+        self.perMode = perMode; self.perDayMinutes = perDayMinutes; self.openSessionsUsed = openSessionsUsed
+        self.openSessionsLimit = openSessionsLimit; self.openRequestsCancelled = openRequestsCancelled
+        self.extensions = extensions; self.endedEarly = endedEarly; self.longest = longest
+        self.sessions = sessions; self.lastWeekMinutes = lastWeekMinutes
+    }
 }
 
 public struct SocketError: Error, CustomStringConvertible {

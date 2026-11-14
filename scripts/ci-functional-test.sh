@@ -39,6 +39,7 @@ c["locked_allowed_domains"] += ["github.com", "githubusercontent.com", "githubas
                                 "windows.net", "visualstudio.com", "azure.com", "msftauth.net"]
 c["idle_end_minutes"] = 0   # nobody touches the CI Mac's keyboard
 c.pop("bedtime", None)     # CI runs in UTC at any hour
+c["escape_wait_minutes"] = 0
 for m in c["modes"]:
     if m["id"] == "research":
         m["start_delay_seconds"] = 3   # keep CI quick
@@ -131,6 +132,53 @@ check  "research session ends"                      intentmode end done research
 sleep 2
 refuse "example.com blocked again after research"   fetch https://example.com
 check  "research is in its 15-minute cooldown"      bash -c "intentmode status | grep -q 'Available again at'"
+
+echo "== Open session (escape hatch) =="
+refuse "open session can't be started directly"    intentmode start open just trying to skip all of the steps of the escape hatch here
+cat > /tmp/im_escape.py <<'PY'
+import json, socket, sys
+def call(req):
+    s = socket.socket(socket.AF_UNIX); s.connect("/var/run/intentmode.sock")
+    s.sendall((json.dumps(req) + "\n").encode()); data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk: break
+        data += chunk
+    return json.loads(data)
+step = sys.argv[1]
+if step == "short":
+    sys.exit(0 if not call({"cmd": "escape_request", "mode": "open", "reason": "too short"})["ok"] else 1)
+if step == "request":
+    reason = " ".join(["I need to install a printer driver from the vendor website which is not covered by any other mode today"] * 2)
+    sys.exit(0 if call({"cmd": "escape_request", "mode": "open", "reason": reason})["ok"] else 1)
+st = call({"cmd": "status"})["status"]
+if step == "challenge_len":
+    sys.exit(0 if st.get("escapeStage") == "challenge" and len(st.get("escapeChallenge", "")) == 150 else 1)
+if step == "wrong":
+    sys.exit(0 if not call({"cmd": "escape_challenge", "intent": "x" * 150})["ok"] else 1)
+if step == "right":
+    sys.exit(0 if call({"cmd": "escape_challenge", "intent": st["escapeChallenge"]})["ok"] else 1)
+if step == "confirm":
+    sys.exit(0 if call({"cmd": "escape_confirm"})["ok"] else 1)
+if step == "week":
+    s = call({"cmd": "stats"})["stats"]
+    print(json.dumps({k: s[k] for k in ("totalMinutes", "sessionCount", "openSessionsUsed", "perDayMinutes")}))
+    sys.exit(0 if s["sessionCount"] >= 3 else 1)
+PY
+check  "a short reason is refused"                 python3 /tmp/im_escape.py short
+check  "a 25+ word reason is accepted"             python3 /tmp/im_escape.py request
+check  "a 150-character retype text is shown"      python3 /tmp/im_escape.py challenge_len
+check  "a wrong retype is refused"                 python3 /tmp/im_escape.py wrong
+check  "the exact retype is accepted"              python3 /tmp/im_escape.py right
+check  "the open session starts after the wait"    python3 /tmp/im_escape.py confirm
+sleep 2
+check  "open web works in the open session"        fetch https://example.com
+check  "reddit.com still refused"                  nxdomain www.reddit.com
+check  "adult sites still refused"                 nxdomain www.pornhub.com
+check  "open session ends"                         intentmode end done
+sleep 1
+check  "weekly overview counts the sessions"       python3 /tmp/im_escape.py week
+check  "lock screen shows today's usage"           bash -c "intentmode status >/dev/null"
 
 echo "== Uninstall restores everything =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1

@@ -135,6 +135,78 @@ final class AppModel: ObservableObject {
 
     @Published var noteText = ""
 
+    // MARK: open session (escape hatch)
+
+    @Published var escapeReasonText = ""
+    @Published var challengeInput = ""
+    @Published var challengeMessage: String?
+    private var escapeConfirming = false
+
+    func requestEscape(modeId: String) {
+        errorText = nil
+        send(IPCRequest(cmd: "escape_request", mode: modeId, reason: escapeReasonText)) { r in
+            if r.ok { self.escapeReasonText = ""; self.selectedMode = nil; self.challengeInput = "" }
+            else { self.errorText = r.error }
+        }
+    }
+
+    /// Called on every keystroke of the retype: one typo resets it.
+    func challengeChanged(_ typed: String) {
+        guard let target = status?.escapeChallenge, !typed.isEmpty else { return }
+        if !target.hasPrefix(typed) {
+            NSSound.beep()
+            challengeMessage = "Typo — start again from the beginning."
+            DispatchQueue.main.async { self.challengeInput = "" }
+        } else if typed == target {
+            challengeMessage = nil
+            send(IPCRequest(cmd: "escape_challenge", intent: typed)) { r in
+                if !r.ok { self.challengeMessage = r.error; self.challengeInput = "" }
+            }
+        } else {
+            challengeMessage = nil
+        }
+    }
+
+    func cancelEscape() {
+        send(IPCRequest(cmd: "escape_cancel")) { _ in self.challengeInput = ""; self.challengeMessage = nil }
+    }
+
+    /// Starts the open session once its waiting time is over.
+    func checkEscapeConfirm() {
+        guard let st = status, st.escapeStage == "waiting", (st.escapeReadyIn ?? 1) == 0, !escapeConfirming else { return }
+        escapeConfirming = true
+        send(IPCRequest(cmd: "escape_confirm")) { r in
+            self.escapeConfirming = false
+            if r.ok { self.launch(r.launch ?? []) } else { self.errorText = r.error }
+        }
+    }
+
+    // MARK: weekly overview
+
+    @Published var showWeek = false
+    @Published var weekStats: WeekStats?
+
+    func openWeek() {
+        showWeek = true
+        send(IPCRequest(cmd: "stats")) { r in self.weekStats = r.stats }
+    }
+
+    /// The first time the lock screen is shown on a Sunday, the weekly review opens by itself.
+    func maybeShowSundayReview() {
+        guard status?.state == "locked", Calendar.current.component(.weekday, from: now) == 1 else { return }
+        let key = "reviewShown"
+        let today = ISO8601DateFormatter.string(from: now, timeZone: .current, formatOptions: [.withFullDate])
+        guard UserDefaults.standard.string(forKey: key) != today else { return }
+        UserDefaults.standard.set(today, forKey: key)
+        ScreenLog.write("showing the Sunday review")
+        openWeek()
+    }
+
+    func openChromeProfile() {
+        let url = URL(fileURLWithPath: "/Users/Shared/IntentMode/IntentMode-Chrome.mobileconfig")
+        NSWorkspace.shared.open(url)
+    }
+
     func addNote() {
         let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
