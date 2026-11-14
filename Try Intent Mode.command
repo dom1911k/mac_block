@@ -46,6 +46,43 @@ else
   echo
 fi
 
+# Check that the tools actually work. A known problem: after a tools update, an old file is left
+# behind ("redefinition of module 'SwiftBridging'") and every Swift program fails. A clean reinstall fixes it.
+tools_work() {
+  local d; d="$(mktemp -d)"
+  printf 'import Foundation\nprint("ok")\n' > "$d/t.swift"
+  xcrun swiftc -typecheck "$d/t.swift" >"$d/out.txt" 2>&1
+  local r=$?
+  cp "$d/out.txt" /tmp/intentmode-toolcheck.txt 2>/dev/null
+  rm -rf "$d"
+  return $r
+}
+if ! tools_work; then
+  echo "  ⚠️  Apple's developer tools on this Mac are damaged (a leftover from an earlier update)."
+  echo "     This is not caused by Intent Mode. The fix is a clean reinstall of the tools:"
+  echo "     they are removed and downloaded again (5–15 minutes). Nothing else is touched."
+  echo
+  read -r -p "  Press Enter to reinstall them (or close this window to cancel). " _
+  echo
+  echo "  macOS will ask for your Mac password. Nothing appears while you type — that's normal."
+  sudo rm -rf /Library/Developer/CommandLineTools
+  sudo xcode-select --reset 2>/dev/null
+  echo
+  echo "  A window will pop up: click \"Install\", then \"Agree\". This window waits."
+  xcode-select --install >/dev/null 2>&1
+  printf "  Waiting"
+  until xcrun --find swift >/dev/null 2>&1; do sleep 10; printf "."; done
+  echo " done."
+  if ! tools_work; then
+    echo
+    echo "  ❌ The tools still don't work. Please send Claude this text:"
+    cat /tmp/intentmode-toolcheck.txt
+    pause; exit 1
+  fi
+  echo "  Developer tools repaired ✓"
+  echo
+fi
+
 # ── Step 2: build ────────────────────────────────────────────────────────────
 echo "Step 2 of 3 — building Intent Mode (3–6 minutes the first time)…"
 LOG="$HOME/Desktop/IntentMode-build-log.txt"
