@@ -27,6 +27,9 @@ final class Daemon {
     /// Monotonic time (seconds since boot, paused during sleep) when +10 was requested.
     private var extensionRequestedAt: TimeInterval?
     private var tickCount = 0
+    /// Set during a test install (test-mode.json). Everything is removed when it passes.
+    private let testEndsAt: Date? = TestMode.load().map { Date(timeIntervalSince1970: $0.endsAt) }
+    private var testStopping = false
     private var timer: DispatchSourceTimer?
 
     private let box: PolicyBox
@@ -66,7 +69,7 @@ final class Daemon {
         box = PolicyBox(locked)
         pf = PFManager(config: loaded)
         dns = DNSServer(box: box, pf: pf, upstream: loaded.upstreamDns)
-        apps = AppWatcher(config: loaded)
+        apps = AppWatcher(config: Self.appsConfig(loaded, testMode: TestMode.load() != nil))
         blocklist = Self.loadBlocklist(loaded)
         control = ControlServer { [unowned self] req, uid in self.handle(req, uid: uid) }
     }
@@ -123,9 +126,21 @@ final class Daemon {
         Log.info("intentmoded stopping (enforcement stays in place)")
     }
 
+    /// In test mode Terminal is never quit, so there is always a way out.
+    private static func appsConfig(_ c: IntentConfig, testMode: Bool) -> IntentConfig {
+        guard testMode else { return c }
+        var copy = c
+        copy.alwaysAllowedBundleIds.append("com.apple.Terminal")
+        return copy
+    }
+
     private func tick() {
         tickCount += 1
         let now = Date()
+        if let t = testEndsAt, now >= t, !testStopping {
+            Log.warn("test time is over; removing Intent Mode")
+            _ = stopTest()
+        }
         switch phase {
         case .session:
             if let s = pstate.session, now >= s.endsAt { endSession(early: false, reason: "time is up") }
@@ -211,7 +226,7 @@ final class Daemon {
             try? FileManager.default.copyItem(atPath: Paths.config, toPath: Paths.configLastGood)
             pf.updateConfig(c)
             dns.setUpstream(c.upstreamDns)
-            apps.updateConfig(c)
+            apps.updateConfig(Self.appsConfig(c, testMode: testEndsAt != nil))
             if case .session = phase, let s = pstate.session, c.mode(s.modeId) == nil {
                 endSession(early: true, reason: "mode was removed from config")
             } else {
@@ -301,6 +316,7 @@ final class Daemon {
         var st = DaemonStatus(state: "locked", version: BuildInfo.version, devBuild: BuildInfo.isDevBuild, modes: modes,
                               intentMinWords: config.intentMinWords, extensionMinReasonWords: config.extensionMinReasonWords,
                               extensionMinutes: config.extensionMinutes, exempt: exempt, notice: notice)
+        st.testEndsAt = testEndsAt?.timeIntervalSince1970
         switch phase {
         case .locked:
             break
@@ -452,7 +468,22 @@ final class Daemon {
 
     // MARK: emergency off & restart
 
+    /// Test mode: uninstall everything (logs are kept in /Users/Shared/IntentMode/last-test-logs).
+    private func stopTest() -> IPCResponse {
+        testStopping = true
+        SessionLog.write(["event": "test_stopped"])
+        guard spawnDetached("/bin/bash", [Paths.uninstallScript, "--yes", "--delay"]) else {
+            testStopping = false
+            return .fail("Could not start the uninstaller. Restart your Mac: test mode always switches off on restart.")
+        }
+        return .success("Turning Intent Mode off. This takes a few seconds.")
+    }
+
     private func emergencyOff(_ r: IPCRequest, uid: uid_t) -> IPCResponse {
+        if testEndsAt != nil {
+            Log.warn("test stopped from the intent screen (uid \(uid))")
+            return stopTest()
+        }
         guard BuildInfo.isDevBuild else { return .fail("emergency-off is only available in dev builds.") }
         if uid != 0 {
             guard let u = r.username, let p = r.password, Self.verifyAdmin(user: u, password: p) else {

@@ -116,7 +116,7 @@ func userName(_ uid: uid_t) -> String? {
 func ensureScreenAgent(uid: uid_t) {
     let domain = "gui/\(uid)"
     run("/bin/launchctl", ["enable", "\(domain)/\(Paths.agentLabel)"])
-    run("/bin/launchctl", ["bootstrap", domain, Paths.agentPlist])   // fails harmlessly if already loaded
+    run("/bin/launchctl", ["bootstrap", domain, Paths.agentPlistInUse])   // fails harmlessly if already loaded
     run("/bin/launchctl", ["kickstart", "\(domain)/\(Paths.agentLabel)"])
 }
 

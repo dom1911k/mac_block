@@ -22,6 +22,18 @@ public enum Paths {
     public static var learned: String { base + "/learned" }
     public static var emergencyScript: String { base + "/emergency-off.sh" }
     public static var guardBinary: String { base + "/intentguard" }
+    public static var uninstallScript: String { base + "/uninstall.sh" }
+
+    // Test mode: launchd plists live inside the IntentMode folder instead of /Library/Launch*,
+    // so nothing starts again after a reboot, and a one-shot cleanup job undoes everything at boot.
+    public static var testModeFile: String { base + "/test-mode.json" }
+    public static var testLaunchdDir: String { base + "/launchd" }
+    public static let testCleanupPlist = "/Library/LaunchDaemons/com.intentmode.testcleanup.plist"
+
+    /// The agent plist actually in use (normal install or test mode).
+    public static var agentPlistInUse: String {
+        FileManager.default.fileExists(atPath: agentPlist) ? agentPlist : testLaunchdDir + "/com.intentmode.screen.plist"
+    }
 
     public static let socket = "/var/run/intentmode.sock"
 
@@ -35,6 +47,16 @@ public enum Paths {
     public static let daemonPlist = "/Library/LaunchDaemons/com.intentmode.daemon.plist"
     public static let agentPlist = "/Library/LaunchAgents/com.intentmode.screen.plist"
     public static let screenBundleID = "com.intentmode.screen"
+}
+
+/// Present only during a test install. When `endsAt` passes, everything is uninstalled automatically.
+public struct TestMode: Codable {
+    public var endsAt: Double
+
+    public static func load() -> TestMode? {
+        guard let d = try? Data(contentsOf: URL(fileURLWithPath: Paths.testModeFile)) else { return nil }
+        return try? JSONDecoder().decode(TestMode.self, from: d)
+    }
 }
 
 public enum FileUtil {

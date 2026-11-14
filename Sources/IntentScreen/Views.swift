@@ -129,11 +129,36 @@ struct IntentEntry: View {
     }
 }
 
+/// Shown on every screen during a test install.
+struct TestBanner: View {
+    @ObservedObject var model: AppModel
+    var compact = false
+
+    var body: some View {
+        if let ends = model.status?.testEndsAt {
+            let left = Int(Date(timeIntervalSince1970: ends).timeIntervalSince(model.now))
+            HStack(spacing: 10) {
+                Text(compact ? "TEST · off in \(formatRemaining(left))"
+                             : "TEST MODE — switches itself off in \(formatRemaining(left)), or when you restart the Mac.")
+                    .font(.system(size: compact ? 11 : 13, weight: .medium))
+                Spacer(minLength: 4)
+                Button(compact ? "Stop test" : "Stop test now") { model.stopTest() }
+                    .controlSize(compact ? .small : .regular)
+                    .disabled(model.busy)
+            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 12).padding(.vertical, compact ? 4 : 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.yellow))
+        }
+    }
+}
+
 struct Footer: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
         VStack(spacing: 10) {
+            TestBanner(model: model)
             if model.showEmergency {
                 VStack(spacing: 8) {
                     Text("Emergency off (dev build): removes all enforcement until you turn it back on with\nsudo intentmode emergency-off --undo")
@@ -158,7 +183,7 @@ struct Footer: View {
                         .help("Shows the menu bar for 2 minutes so you can pick a network from the Wi-Fi menu.")
                 }
                 Spacer()
-                if model.status?.devBuild == true && !model.showEmergency {
+                if model.status?.devBuild == true && !model.showEmergency && model.status?.testEndsAt == nil {
                     Button("Emergency off…") { model.showEmergency = true }
                         .foregroundColor(.red.opacity(0.8))
                 }
@@ -179,6 +204,7 @@ struct SessionView: View {
         let remaining = Int(((st?.endsAt).map { Date(timeIntervalSince1970: $0) } ?? model.now).timeIntervalSince(model.now).rounded(.up))
         let warning = st?.warning == true
         VStack(alignment: .leading, spacing: 8) {
+            TestBanner(model: model, compact: true)
             HStack {
                 Text(st?.modeName ?? "Session").font(.system(size: 13, weight: .semibold))
                 Spacer()

@@ -1,0 +1,35 @@
+name: macOS build
+# Compiles everything on a real Mac, runs the unit tests, builds a signed package and
+# checks the pf rules with pfctl (parse only — nothing is installed on the runner).
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+      - name: Compile
+        run: swift build -c release 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+      - name: Unit tests
+        run: swift test
+      - name: Package (scripts/build.sh)
+        run: bash scripts/build.sh "ci"
+      - name: Self-test as root (validates pf rules with pfctl -n)
+        run: |
+          PKG="build/IntentMode-$(cat VERSION)"
+          sudo "$PKG/bin/intentmoded" --self-test --config "$PKG/Resources/config.default.json"
+          "$PKG/bin/intentmode" verify "$PKG" --pubkey "$PKG/Resources/update_pubkey.b64"
+          "$PKG/bin/intentmode" inspect-app "/Applications/Google Chrome.app" || true
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log

@@ -101,6 +101,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Test mode only: no password needed, turns everything off and uninstalls.
+    func stopTest() {
+        send(IPCRequest(cmd: "emergency_off")) { r in
+            if r.ok { self.infoText = r.message } else { self.errorText = r.error }
+        }
+    }
+
     func emergencyOff() {
         send(IPCRequest(cmd: "emergency_off", username: adminUser, password: adminPassword)) { r in
             self.adminPassword = ""

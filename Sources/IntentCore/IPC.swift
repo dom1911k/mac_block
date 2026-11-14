@@ -69,6 +69,8 @@ public struct DaemonStatus: Codable {
     public var extensionMinutes: Int
     public var exempt: Bool
     public var notice: String?
+    /// Set during a test install: when (seconds since 1970) it switches itself off.
+    public var testEndsAt: Double?
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,
                 endsAt: Double? = nil, remainingSeconds: Int? = nil, warning: Bool = false,
