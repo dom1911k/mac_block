@@ -201,6 +201,23 @@ final class BedtimeTests: XCTestCase {
     }
 }
 
+final class ScheduleTests: XCTestCase {
+    func testSundayWindow() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        let w = ScheduleWindow(days: ["sun"], start: "10:00", end: "17:00")
+        // 2026-11-15 is a Sunday, 2026-11-14 a Saturday.
+        func at(_ d: Int, _ h: Int, _ m: Int) -> Date { cal.date(from: DateComponents(year: 2026, month: 11, day: d, hour: h, minute: m))! }
+        XCTAssertTrue(w.isValid)
+        XCTAssertNil(w.endIfActive(at: at(14, 12, 0), calendar: cal))
+        XCTAssertNil(w.endIfActive(at: at(15, 9, 59), calendar: cal))
+        XCTAssertEqual(w.endIfActive(at: at(15, 10, 0), calendar: cal), at(15, 17, 0))
+        XCTAssertEqual(w.endIfActive(at: at(15, 16, 45), calendar: cal), at(15, 17, 0))
+        XCTAssertNil(w.endIfActive(at: at(15, 17, 0), calendar: cal))
+        XCTAssertEqual(w.label, "Sun 10:00–17:00")
+        XCTAssertFalse(ScheduleWindow(days: ["sunday"], start: "10:00", end: "17:00").isValid)
+    }
+}
+
 final class MiscTests: XCTestCase {
     func testVersions() {
         XCTAssertTrue(VersionCompare.isNewer("0.1.1", than: "0.1.0"))

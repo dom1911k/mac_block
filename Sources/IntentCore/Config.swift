@@ -73,6 +73,38 @@ public struct Bedtime: Codable, Equatable {
     }
 }
 
+/// When a mode can be used, e.g. {"days": ["sun"], "start": "10:00", "end": "17:00"} (same-day windows).
+public struct ScheduleWindow: Codable, Equatable {
+    public var days: [String]          // "mon" … "sun"
+    public var start: String
+    public var end: String
+
+    public init(days: [String], start: String, end: String) { self.days = days; self.start = start; self.end = end }
+
+    static let dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]   // Calendar weekday 1…7
+
+    public var isValid: Bool {
+        guard let s = Bedtime.minutes(start), let e = Bedtime.minutes(end), s < e, !days.isEmpty else { return false }
+        return days.allSatisfy { Self.dayNames.contains($0.lowercased()) }
+    }
+
+    /// If `date` is inside this window, the time it ends.
+    public func endIfActive(at date: Date, calendar cal: Calendar = .current) -> Date? {
+        guard let s = Bedtime.minutes(start), let e = Bedtime.minutes(end) else { return nil }
+        let c = cal.dateComponents([.weekday, .hour, .minute], from: date)
+        let day = Self.dayNames[((c.weekday ?? 1) - 1) % 7]
+        guard days.map({ $0.lowercased() }).contains(day) else { return nil }
+        let now = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        guard now >= s && now < e else { return nil }
+        return cal.date(byAdding: .minute, value: e, to: cal.startOfDay(for: date))
+    }
+
+    public var label: String {
+        let names = ["mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu", "fri": "Fri", "sat": "Sat", "sun": "Sun"]
+        return days.map { names[$0.lowercased()] ?? $0 }.joined(separator: "/") + " \(start)–\(end)"
+    }
+}
+
 public struct BlocklistSource: Codable, Equatable {
     public var url: String
     /// The local file it is merged into (relative to the IntentMode folder), e.g. "blocklists/oisd-nsfw.txt".
@@ -104,6 +136,8 @@ public struct ModeConfig: Codable {
     public var cooldownMinutes: Int?
     /// Overrides the global idle_end_minutes for this mode.
     public var idleEndMinutes: Int?
+    /// If set, the mode can only be started inside one of these windows; sessions end with the window.
+    public var schedule: [ScheduleWindow]?
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, apps, launch, minutes
@@ -118,6 +152,7 @@ public struct ModeConfig: Codable {
         case startDelaySeconds = "start_delay_seconds"
         case cooldownMinutes = "cooldown_minutes"
         case idleEndMinutes = "idle_end_minutes"
+        case schedule
     }
 
     public init(from decoder: Decoder) throws {
@@ -139,6 +174,13 @@ public struct ModeConfig: Codable {
         startDelaySeconds = try c.decodeIfPresent(Int.self, forKey: .startDelaySeconds)
         cooldownMinutes = try c.decodeIfPresent(Int.self, forKey: .cooldownMinutes)
         idleEndMinutes = try c.decodeIfPresent(Int.self, forKey: .idleEndMinutes)
+        schedule = try c.decodeIfPresent([ScheduleWindow].self, forKey: .schedule)
+    }
+
+    /// The end of the schedule window `date` is in, or nil if outside every window. Unscheduled modes: distantFuture.
+    public func scheduleEnd(at date: Date) -> Date? {
+        guard let s = schedule, !s.isEmpty else { return .distantFuture }
+        return s.compactMap { $0.endIfActive(at: date) }.max()
     }
 
     public var isOpenWeb: Bool { openWeb == true }
@@ -352,6 +394,9 @@ public struct IntentConfig: Codable {
             if let l = m.dailyLimit, l < 0 { errs.append("mode '\(m.id)': daily_limit must not be negative") }
             if let l = m.weeklyLimit, l < 0 { errs.append("mode '\(m.id)': weekly_limit must not be negative") }
             if let d = m.startDelaySeconds, d < 0 || d > 3600 { errs.append("mode '\(m.id)': start_delay_seconds must be 0–3600") }
+            for w in m.schedule ?? [] where !w.isValid {
+                errs.append("mode '\(m.id)': schedule window \(w.days) \(w.start)–\(w.end) is not valid (days like \"sun\", start before end)")
+            }
             if let w = m.intentMinWords, w < 1 { errs.append("mode '\(m.id)': intent_min_words must be at least 1") }
             if m.isOpenWeb && !m.domains.isEmpty { errs.append("mode '\(m.id)': an open_web mode doesn't use 'domains' (use blocked_domains)") }
             if !m.isOpenWeb && m.domains.isEmpty { errs.append("mode '\(m.id)': domains is empty (or set open_web: true)") }

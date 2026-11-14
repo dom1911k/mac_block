@@ -384,6 +384,9 @@ final class Daemon {
         if let b = config.bedtime, let end = b.endIfActive(at: now), !b.allowedModes.contains(m.id) {
             return (false, "Bedtime until \(Self.clock(end))")
         }
+        if m.scheduleEnd(at: now) == nil {
+            return (false, "Only " + (m.schedule ?? []).map { $0.label }.joined(separator: ", "))
+        }
         if let cd = m.cooldownMinutes, cd > 0, let last = pstate.lastEnded?[m.id] {
             let again = last.addingTimeInterval(Double(cd) * 60)
             if again > now { return (false, "Available again at \(Self.clock(again))") }
@@ -504,16 +507,19 @@ final class Daemon {
     }
 
     /// Sessions of modes not allowed at bedtime end when bedtime starts.
+    /// Sessions end when bedtime starts (unless the mode is allowed then) and when their schedule window closes.
     private func capAtBedtime(_ end: Date, mode: ModeConfig, now: Date) -> Date {
-        guard let b = config.bedtime, !b.allowedModes.contains(mode.id), let start = b.nextStart(after: now) else { return end }
-        return min(end, start)
+        var capped = end
+        if let windowEnd = mode.scheduleEnd(at: now) { capped = min(capped, windowEnd) }
+        guard let b = config.bedtime, !b.allowedModes.contains(mode.id), let start = b.nextStart(after: now) else { return capped }
+        return min(capped, start)
     }
 
     private func beginSession(mode: ModeConfig, intent text: String, uid: uid_t) -> IPCResponse {
         pendingStart = nil
         let now = Date()
         let ends = capAtBedtime(now.addingTimeInterval(Double(mode.minutes) * 60), mode: mode, now: now)
-        guard ends.timeIntervalSince(now) >= 60 else { return .fail("Bedtime starts in less than a minute.") }
+        guard ends.timeIntervalSince(now) >= 60 else { return .fail("Less than a minute left in this mode's time window.") }
         pstate.session = SessionRecord(modeId: mode.id, intent: text, startedAt: now, endsAt: ends, extended: false)
         pstate.increment(mode.id)
         pstate.save()

@@ -50,7 +50,10 @@
 				<string>*</string>
 			</array>
 			<key>ExtensionInstallAllowlist</key>
-			<array/>
+			<array>
+				<!-- Kleinanzeigen Enhanced. Check the ID at chrome://extensions (Developer mode on) and fix it here if it differs. -->
+				<string>ledhmcolmgjbkplfmppjfglgfpefmpbe</string>
+			</array>
 			<key>URLBlocklist</key>
 			<array>
 				<string>chrome://flags</string>

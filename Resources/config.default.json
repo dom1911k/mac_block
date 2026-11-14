@@ -219,6 +219,34 @@
       "=oauth2.googleapis.com",
       "=ogs.google.com",
       "=lh3.googleusercontent.com"
+    ],
+    "reselling": [
+      "goofish.com",
+      "taobao.com",
+      "tmall.com",
+      "alicdn.com",
+      "alibaba.com",
+      "alibabausercontent.com",
+      "mmstat.com",
+      "tbcdn.cn",
+      "taobaocdn.com",
+      "alipay.com",
+      "alipayobjects.com",
+      "superbuy.com",
+      "ebay.de",
+      "ebay.com",
+      "ebaystatic.com",
+      "ebayimg.com",
+      "ebaydesc.com",
+      "kleinanzeigen.de",
+      "classistatic.de",
+      "kleinanzeigen-enhanced.de",
+      "vinted.de",
+      "vinted.com",
+      "vinted.net",
+      "willhaben.at",
+      "=sheets.google.com",
+      "=drive.google.com"
     ]
   },
   "exempt_users": [],
@@ -342,6 +370,39 @@
       ],
       "minutes": 10,
       "name": "Get a book"
+    },
+    {
+      "allow_extension": true,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        }
+      ],
+      "daily_limit": 1,
+      "description": "Goofish, Taobao, Superbuy, eBay, Kleinanzeigen, Vinted, willhaben, Sheets — Sundays 10:00–17:00",
+      "domains": [
+        "@reselling",
+        "@google_docs",
+        "@google_signin"
+      ],
+      "id": "reselling",
+      "launch": [
+        {
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 30,
+      "name": "Reselling",
+      "schedule": [
+        {
+          "days": [
+            "sun"
+          ],
+          "end": "17:00",
+          "start": "10:00"
+        }
+      ]
     },
     {
       "allow_extension": false,

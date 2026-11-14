@@ -100,6 +100,14 @@ check  "session ends"                      intentmode end automated test finishe
 sleep 2
 refuse "pypi.org blocked again after end"  fetch https://pypi.org
 
+echo "== Reselling (Sundays 10–17 only) =="
+if [ "$(date +%u)" = 7 ] && [ "$(date +%H)" -ge 10 ] && [ "$(date +%H)" -lt 17 ]; then
+  echo "  (it's Sunday daytime here — skipping the 'outside its window' check)"
+else
+  check "reselling is closed outside Sunday 10–17" bash -c "intentmode status | grep reselling | grep -q 'Only Sun 10:00'"
+  refuse "reselling can't be started now"          intentmode start reselling checking prices on goofish and listing three items on kleinanzeigen today
+fi
+
 echo "== Research (open web) =="
 check  "research session starts (after its pause)"  intentmode start research looking up used car prices on some dealer websites for my trip planning
 sleep 2

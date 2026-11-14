@@ -195,6 +195,9 @@ input), `cooldown_minutes` per mode (Research: 15 minutes before it can be start
 (default 23:00–06:00, only Journal; other sessions end at 23:00). Notes typed on the lock screen
 ("Note for later") are kept by the daemon and shown again during Research.
 
+**Scheduled modes** (like *Reselling*): `"schedule": [{"days": ["sun"], "start": "10:00", "end": "17:00"}]`. The mode
+can only be started inside a window, and the session ends when the window closes.
+
 Other keys: `intent_min_words`, `warning_seconds`, `extension_*`, `daily_limit`/`minutes` per mode,
 `flags.claude_mode_allow_google_search`, `system_path_prefixes` (which macOS components are always allowed),
 `always_allowed_bundle_ids`, `never_allowed_bundle_ids`, `chrome_forbidden_flags`, `doh_block_ips`, `exempt_users`
