@@ -147,7 +147,15 @@ final class Daemon {
         }
         switch phase {
         case .session:
-            if let s = pstate.session, now >= s.endsAt { endSession(early: false, reason: "time is up") }
+            if let s = pstate.session, now >= s.endsAt {
+                endSession(early: false, reason: "time is up")
+            } else if let s = pstate.session, let mode = config.mode(s.modeId) {
+                if let b = config.bedtime, b.endIfActive(at: now) != nil, !b.allowedModes.contains(mode.id) {
+                    endSession(early: false, reason: "bedtime")
+                } else if let limit = idleLimitSeconds(mode), let idle = systemIdleSeconds(), idle >= Double(limit) {
+                    endSession(early: true, reason: "no activity for \(limit / 60) minutes")
+                }
+            }
         case .learn(_, let until):
             if now >= until { _ = stopLearn(apply: false) }
         case .locked:
@@ -298,6 +306,19 @@ final class Daemon {
             return IPCResponse(ok: true, status: status(uid: uid))
         case "start":
             return start(modeId: r.mode ?? "", intent: r.intent ?? "", uid: uid)
+        case "note_add":
+            let text = (r.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return .fail("Empty note.") }
+            var notes = pstate.notes ?? []
+            guard notes.count < 30 else { return .fail("You have 30 notes already — delete some first.") }
+            notes.append(NoteItem(id: UUID().uuidString, text: String(text.prefix(300)), created: Date().timeIntervalSince1970))
+            pstate.notes = notes
+            pstate.save()
+            return .success("Saved.")
+        case "note_delete":
+            pstate.notes = (pstate.notes ?? []).filter { $0.id != r.noteId }
+            pstate.save()
+            return .success()
         case "start_confirm":
             return confirmStart(uid: uid)
         case "start_cancel":
@@ -349,7 +370,24 @@ final class Daemon {
         }
     }
 
+    private func idleLimitSeconds(_ m: ModeConfig) -> Int? {
+        let minutes = m.idleEndMinutes ?? config.idleEndMinutes
+        return minutes > 0 ? minutes * 60 : nil
+    }
+
+    private static func clock(_ d: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: d)
+    }
+
     private func availability(_ m: ModeConfig) -> (Bool, String?) {
+        let now = Date()
+        if let b = config.bedtime, let end = b.endIfActive(at: now), !b.allowedModes.contains(m.id) {
+            return (false, "Bedtime until \(Self.clock(end))")
+        }
+        if let cd = m.cooldownMinutes, cd > 0, let last = pstate.lastEnded?[m.id] {
+            let again = last.addingTimeInterval(Double(cd) * 60)
+            if again > now { return (false, "Available again at \(Self.clock(again))") }
+        }
         let used = pstate.used(m.id)
         if let limit = m.dailyLimit, used >= limit {
             return (false, limit == 0 ? "Disabled" : "Used \(used) of \(limit) today")
@@ -378,6 +416,15 @@ final class Daemon {
                               intentMinWords: config.intentMinWords, extensionMinReasonWords: config.extensionMinReasonWords,
                               extensionMinutes: config.extensionMinutes, exempt: exempt, notice: notice)
         st.testEndsAt = testEndsAt?.timeIntervalSince1970
+        st.notes = pstate.notes ?? []
+        if let b = config.bedtime, let end = b.endIfActive(at: Date()) {
+            let names = b.allowedModes.compactMap { config.mode($0)?.name }
+            st.bedtimeNotice = "Bedtime until \(Self.clock(end))" + (names.isEmpty ? " — everything is locked" : " — only \(names.joined(separator: ", "))")
+        }
+        if case .session = phase, let s = pstate.session, let mode = config.mode(s.modeId), let limit = idleLimitSeconds(mode) {
+            st.idleLimitSeconds = limit
+            st.idleSeconds = systemIdleSeconds().map { Int($0) }
+        }
         if case .locked = phase, let p = pendingStart {
             st.pendingModeId = p.modeId
             st.pendingModeName = config.mode(p.modeId)?.name ?? p.modeId
@@ -456,11 +503,18 @@ final class Daemon {
         return beginSession(mode: mode, intent: p.intent, uid: uid)
     }
 
+    /// Sessions of modes not allowed at bedtime end when bedtime starts.
+    private func capAtBedtime(_ end: Date, mode: ModeConfig, now: Date) -> Date {
+        guard let b = config.bedtime, !b.allowedModes.contains(mode.id), let start = b.nextStart(after: now) else { return end }
+        return min(end, start)
+    }
+
     private func beginSession(mode: ModeConfig, intent text: String, uid: uid_t) -> IPCResponse {
         pendingStart = nil
         let now = Date()
-        pstate.session = SessionRecord(modeId: mode.id, intent: text, startedAt: now,
-                                       endsAt: now.addingTimeInterval(Double(mode.minutes) * 60), extended: false)
+        let ends = capAtBedtime(now.addingTimeInterval(Double(mode.minutes) * 60), mode: mode, now: now)
+        guard ends.timeIntervalSince(now) >= 60 else { return .fail("Bedtime starts in less than a minute.") }
+        pstate.session = SessionRecord(modeId: mode.id, intent: text, startedAt: now, endsAt: ends, extended: false)
         pstate.increment(mode.id)
         pstate.save()
         phase = .session
@@ -478,6 +532,9 @@ final class Daemon {
                           "extended": s.extended, "extension_reason": s.extensionReason ?? "",
                           "ended_early": early, "reason": reason])
         pstate.session = nil
+        var ended = pstate.lastEnded ?? [:]
+        ended[s.modeId] = Date()
+        pstate.lastEnded = ended
         pstate.save()
         phase = .locked
         extensionRequestedAt = nil
@@ -505,7 +562,11 @@ final class Daemon {
         guard TextUtil.wordCount(text) >= config.extensionMinReasonWords else {
             return .fail("Give a reason of at least \(config.extensionMinReasonWords) words.")
         }
-        s.endsAt = s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60)
+        if let mode = config.mode(s.modeId) {
+            s.endsAt = capAtBedtime(s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60), mode: mode, now: Date())
+        } else {
+            s.endsAt = s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60)
+        }
         s.extended = true
         s.extensionReason = text
         pstate.session = s

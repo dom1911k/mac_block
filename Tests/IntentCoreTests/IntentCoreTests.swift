@@ -186,6 +186,21 @@ final class ConfigTests: XCTestCase {
     }
 }
 
+final class BedtimeTests: XCTestCase {
+    func testWindowAcrossMidnight() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        let b = Bedtime(start: "23:00", end: "06:00", allowedModes: ["journal"])
+        func at(_ h: Int, _ m: Int) -> Date { cal.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: h, minute: m))! }
+        XCTAssertNil(b.endIfActive(at: at(22, 59), calendar: cal))
+        XCTAssertEqual(b.endIfActive(at: at(23, 0), calendar: cal), cal.date(byAdding: .hour, value: 7, to: at(23, 0)))
+        XCTAssertEqual(b.endIfActive(at: at(2, 30), calendar: cal), at(6, 0))
+        XCTAssertNil(b.endIfActive(at: at(6, 0), calendar: cal))
+        XCTAssertEqual(b.nextStart(after: at(22, 40), calendar: cal), at(23, 0))
+        XCTAssertEqual(b.nextStart(after: at(23, 30), calendar: cal), cal.date(byAdding: .day, value: 1, to: at(23, 0)))
+        XCTAssertFalse(Bedtime(start: "25:00", end: "06:00", allowedModes: []).isValid)
+    }
+}
+
 final class MiscTests: XCTestCase {
     func testVersions() {
         XCTAssertTrue(VersionCompare.isNewer("0.1.1", than: "0.1.0"))

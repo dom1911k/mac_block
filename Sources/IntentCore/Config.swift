@@ -32,6 +32,47 @@ public struct ConditionalDomains: Codable {
     public var domains: [String]
 }
 
+/// A nightly window in which only some modes can be used, e.g. 23:00–06:00 with only Journal.
+public struct Bedtime: Codable, Equatable {
+    public var start: String          // "HH:mm", local time
+    public var end: String            // "HH:mm"; may be earlier than start (crosses midnight)
+    public var allowedModes: [String]
+
+    enum CodingKeys: String, CodingKey { case start, end, allowedModes = "allowed_modes" }
+
+    public init(start: String, end: String, allowedModes: [String]) {
+        self.start = start; self.end = end; self.allowedModes = allowedModes
+    }
+
+    static func minutes(_ s: String) -> Int? {
+        let p = s.split(separator: ":")
+        guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]), (0..<24).contains(h), (0..<60).contains(m) else { return nil }
+        return h * 60 + m
+    }
+    public var isValid: Bool { Self.minutes(start) != nil && Self.minutes(end) != nil && start != end }
+
+    /// If `date` is inside the window, the time it ends.
+    public func endIfActive(at date: Date, calendar cal: Calendar = .current) -> Date? {
+        guard let s = Self.minutes(start), let e = Self.minutes(end) else { return nil }
+        let comps = cal.dateComponents([.hour, .minute], from: date)
+        let now = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let active = s < e ? (now >= s && now < e) : (now >= s || now < e)
+        guard active else { return nil }
+        let startOfDay = cal.startOfDay(for: date)
+        var end = cal.date(byAdding: .minute, value: e, to: startOfDay)!
+        if end <= date { end = cal.date(byAdding: .day, value: 1, to: end)! }
+        return end
+    }
+
+    /// The next time the window starts, strictly after `date`.
+    public func nextStart(after date: Date, calendar cal: Calendar = .current) -> Date? {
+        guard let s = Self.minutes(start) else { return nil }
+        var t = cal.date(byAdding: .minute, value: s, to: cal.startOfDay(for: date))!
+        if t <= date { t = cal.date(byAdding: .day, value: 1, to: t)! }
+        return t
+    }
+}
+
 public struct BlocklistSource: Codable, Equatable {
     public var url: String
     /// The local file it is merged into (relative to the IntentMode folder), e.g. "blocklists/oisd-nsfw.txt".
@@ -59,6 +100,10 @@ public struct ModeConfig: Codable {
     public var intentMinWords: Int?
     /// A pause between pressing Start and the session opening (can be cancelled).
     public var startDelaySeconds: Int?
+    /// After a session of this mode ends, it can't be started again for this many minutes.
+    public var cooldownMinutes: Int?
+    /// Overrides the global idle_end_minutes for this mode.
+    public var idleEndMinutes: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, apps, launch, minutes
@@ -71,6 +116,8 @@ public struct ModeConfig: Codable {
         case blockedDomains = "blocked_domains"
         case intentMinWords = "intent_min_words"
         case startDelaySeconds = "start_delay_seconds"
+        case cooldownMinutes = "cooldown_minutes"
+        case idleEndMinutes = "idle_end_minutes"
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +137,8 @@ public struct ModeConfig: Codable {
         blockedDomains = try c.decodeIfPresent([String].self, forKey: .blockedDomains)
         intentMinWords = try c.decodeIfPresent(Int.self, forKey: .intentMinWords)
         startDelaySeconds = try c.decodeIfPresent(Int.self, forKey: .startDelaySeconds)
+        cooldownMinutes = try c.decodeIfPresent(Int.self, forKey: .cooldownMinutes)
+        idleEndMinutes = try c.decodeIfPresent(Int.self, forKey: .idleEndMinutes)
     }
 
     public var isOpenWeb: Bool { openWeb == true }
@@ -129,6 +178,9 @@ public struct IntentConfig: Codable {
     public var blocklistSources: [BlocklistSource] = []
     /// Force SafeSearch for Google, YouTube, Bing and DuckDuckGo at the DNS level.
     public var forceSafeSearch: Bool = true
+    /// End a session after this many minutes without keyboard/mouse activity (0 = never).
+    public var idleEndMinutes: Int = 5
+    public var bedtime: Bedtime?
     public var systemPathPrefixes: [String] = ["/System/Library/", "/Library/Apple/", "/usr/libexec/", "/usr/sbin/", "/usr/bin/"]
     public var alwaysAllowedBundleIds: [String] = []
     public var neverAllowedBundleIds: [String] = ["com.apple.Safari"]
@@ -159,6 +211,8 @@ public struct IntentConfig: Codable {
         case blocklistExceptions = "blocklist_exceptions"
         case blocklistSources = "blocklist_sources"
         case forceSafeSearch = "force_safe_search"
+        case idleEndMinutes = "idle_end_minutes"
+        case bedtime
         case systemPathPrefixes = "system_path_prefixes"
         case alwaysAllowedBundleIds = "always_allowed_bundle_ids"
         case neverAllowedBundleIds = "never_allowed_bundle_ids"
@@ -195,6 +249,8 @@ public struct IntentConfig: Codable {
         blocklistExceptions = try v(.blocklistExceptions, d.blocklistExceptions)
         blocklistSources = try v(.blocklistSources, d.blocklistSources)
         forceSafeSearch = try v(.forceSafeSearch, d.forceSafeSearch)
+        idleEndMinutes = try v(.idleEndMinutes, d.idleEndMinutes)
+        bedtime = try c.decodeIfPresent(Bedtime.self, forKey: .bedtime)
         systemPathPrefixes = try v(.systemPathPrefixes, d.systemPathPrefixes)
         alwaysAllowedBundleIds = try v(.alwaysAllowedBundleIds, d.alwaysAllowedBundleIds)
         neverAllowedBundleIds = try v(.neverAllowedBundleIds, d.neverAllowedBundleIds)
@@ -279,6 +335,12 @@ public struct IntentConfig: Codable {
         if extensionMinutes < 0 || extensionWaitSeconds < 0 { errs.append("extension values must not be negative") }
         for e in alwaysBlockedDomains where e.hasPrefix("@") && domainGroups[String(e.dropFirst())] == nil {
             errs.append("always_blocked_domains: unknown domain group '\(e)'")
+        }
+        if let b = bedtime {
+            if !b.isValid { errs.append("bedtime: start and end must be different times like \"23:00\"") }
+            for id in b.allowedModes where !modes.contains(where: { $0.id == id }) {
+                errs.append("bedtime: allowed mode '\(id)' doesn't exist")
+            }
         }
         var ids = Set<String>()
         for m in modes {

@@ -133,6 +133,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @Published var noteText = ""
+
+    func addNote() {
+        let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        send(IPCRequest(cmd: "note_add", note: t)) { r in
+            if r.ok { self.noteText = "" } else { self.errorText = r.error }
+        }
+    }
+
+    func deleteNote(_ id: String) {
+        send(IPCRequest(cmd: "note_delete", noteId: id)) { _ in }
+    }
+
     func cancelPendingStart() {
         send(IPCRequest(cmd: "start_cancel")) { _ in }
     }

@@ -48,7 +48,11 @@ Just play with it. Here are good things to check:
     don't. Its tile shows how many you have left today and this week (2 a day, 5 a week).
 11. In Research, try an adult site or a manga site like mangafire.to: it doesn't load. Search Google or Bing
     for something explicit: results are filtered (SafeSearch is forced).
-12. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
+12. Type something into **Note for later** on the lock screen and press Return. Start Research: the note shows in
+    the timer window. After Research ends, its tile says "Available again at …" (15-minute cooldown).
+13. Start a session and don't touch the keyboard or mouse for 5 minutes: the timer warns you in the last minute,
+    then the session ends by itself.
+14. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
 
 Also worth trying once: start a test and **restart the Mac** in the middle of it. After the restart Intent Mode is
 gone and the internet works.

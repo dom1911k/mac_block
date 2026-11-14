@@ -1,5 +1,5 @@
 {
-  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app). Modes with \"open_web\": true allow every site except the adult filter and their blocked_domains. Adult content: blocklist_files (big public lists, refreshed weekly, add-only) + always_blocked_domains (your own groups, e.g. adult_extra) apply in EVERY mode; add your own sites to domain_groups.adult_extra or to blocklists/custom.txt. A wrongly blocked site can go into blocklist_exceptions.",
+  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app). Modes with \"open_web\": true allow every site except the adult filter and their blocked_domains. Adult content: blocklist_files (big public lists, refreshed weekly, add-only) + always_blocked_domains (your own groups, e.g. adult_extra) apply in EVERY mode; add your own sites to domain_groups.adult_extra or to blocklists/custom.txt. A wrongly blocked site can go into blocklist_exceptions. bedtime: only allowed_modes can be used between start and end; other sessions end at bedtime. idle_end_minutes: sessions end after that long without keyboard/mouse input. cooldown_minutes (per mode): wait time after a session of that mode.",
   "always_allowed_bundle_ids": [
     "com.apple.finder"
   ],
@@ -8,6 +8,13 @@
     "@bypass"
   ],
   "app_kill_grace_seconds": 5,
+  "bedtime": {
+    "allowed_modes": [
+      "journal"
+    ],
+    "end": "06:00",
+    "start": "23:00"
+  },
   "blocklist_exceptions": [],
   "blocklist_files": [
     "blocklists/oisd-nsfw.txt",
@@ -222,6 +229,7 @@
     "claude_mode_allow_google_search": false
   },
   "force_safe_search": true,
+  "idle_end_minutes": 5,
   "intent_min_words": 8,
   "learn_max_minutes": 30,
   "locked_allowed_domains": [
@@ -346,6 +354,7 @@
       "blocked_domains": [
         "@distraction"
       ],
+      "cooldown_minutes": 15,
       "daily_limit": 2,
       "description": "Open web for spontaneous searching (no distraction sites, no adult content)",
       "id": "research",

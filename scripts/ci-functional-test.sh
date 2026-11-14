@@ -37,6 +37,8 @@ import json, sys
 c = json.load(open(sys.argv[1]))
 c["locked_allowed_domains"] += ["github.com", "githubusercontent.com", "githubassets.com", "githubapp.com",
                                 "windows.net", "visualstudio.com", "azure.com", "msftauth.net"]
+c["idle_end_minutes"] = 0   # nobody touches the CI Mac's keyboard
+c.pop("bedtime", None)     # CI runs in UTC at any hour
 for m in c["modes"]:
     if m["id"] == "research":
         m["start_delay_seconds"] = 3   # keep CI quick
@@ -120,6 +122,7 @@ check  "a normal search page still loads"           fetch "https://duckduckgo.co
 check  "research session ends"                      intentmode end done researching
 sleep 2
 refuse "example.com blocked again after research"   fetch https://example.com
+check  "research is in its 15-minute cooldown"      bash -c "intentmode status | grep -q 'Available again at'"
 
 echo "== Uninstall restores everything =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1

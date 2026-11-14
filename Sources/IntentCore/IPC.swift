@@ -19,6 +19,8 @@ public struct IPCRequest: Codable {
     public var pid: Int32?
     public var username: String?
     public var password: String?
+    public var note: String?
+    public var noteId: String?
 
     public init(cmd: String, mode: String? = nil, intent: String? = nil, reason: String? = nil,
                 path: String? = nil, apply: Bool? = nil, pid: Int32? = nil,
@@ -27,6 +29,13 @@ public struct IPCRequest: Codable {
         self.path = path; self.apply = apply; self.pid = pid
         self.username = username; self.password = password
     }
+}
+
+public struct NoteItem: Codable, Identifiable, Equatable {
+    public var id: String
+    public var text: String
+    public var created: Double
+    public init(id: String, text: String, created: Double) { self.id = id; self.text = text; self.created = created }
 }
 
 public struct ModeStatus: Codable, Identifiable {
@@ -81,6 +90,13 @@ public struct DaemonStatus: Codable {
     public var pendingModeName: String?
     public var pendingIntent: String?
     public var pendingReadyIn: Int?
+    /// "Note for later" items, shown on the lock screen and in Research.
+    public var notes: [NoteItem] = []
+    /// Set while bedtime is active, e.g. "Bedtime until 06:00 — only Journal".
+    public var bedtimeNotice: String?
+    /// Seconds without input during a session, and when the session ends because of it.
+    public var idleSeconds: Int?
+    public var idleLimitSeconds: Int?
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,
                 endsAt: Double? = nil, remainingSeconds: Int? = nil, warning: Bool = false,

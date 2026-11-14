@@ -30,6 +30,7 @@ let package = Package(
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("Security"),
                 .linkedFramework("OpenDirectory"),
+                .linkedFramework("IOKit"),
             ]
         ),
         // Tiny launcher that launchd runs; starts the daemon and rolls back failed updates.

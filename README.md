@@ -99,6 +99,8 @@ Double-click **Try Intent Mode.command**. It installs Apple's developer tools if
 **Stop test now** button. Step-by-step guide: [docs/EASY-TEST.md](docs/EASY-TEST.md).
 To remove everything: double-click **Stop Intent Mode.command**.
 
+Permanent install and one-click updates: [docs/LONG-TERM.md](docs/LONG-TERM.md).
+
 (The more thorough VM-based checklist is in [docs/PHASE1-TESTING.md](docs/PHASE1-TESTING.md).)
 
 ## Install (for real)
@@ -187,6 +189,11 @@ intentmode inspect-app /Applications/Claude.app
 mode's `blocked_domains` (for example `"@distraction"`, the list in `domain_groups.distraction`). Such modes have more
 friction: `intent_min_words` (per mode), `start_delay_seconds` (a cancellable pause before the session opens),
 `daily_limit` and `weekly_limit` (weeks start Monday 00:00).
+
+**Everyday guard rails:** `idle_end_minutes` (default 5: a session ends after 5 minutes without keyboard/mouse
+input), `cooldown_minutes` per mode (Research: 15 minutes before it can be started again), and `bedtime`
+(default 23:00–06:00, only Journal; other sessions end at 23:00). Notes typed on the lock screen
+("Note for later") are kept by the daemon and shown again during Research.
 
 Other keys: `intent_min_words`, `warning_seconds`, `extension_*`, `daily_limit`/`minutes` per mode,
 `flags.claude_mode_allow_google_search`, `system_path_prefixes` (which macOS components are always allowed),

@@ -1,6 +1,22 @@
 import Foundation
 import Darwin
+import IOKit
 import IntentCore
+
+/// Seconds since the last keyboard/mouse/trackpad input (system-wide), from IOHIDSystem.
+func systemIdleSeconds() -> Double? {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+    guard service != 0 else { return nil }
+    defer { IOObjectRelease(service) }
+    guard let prop = IORegistryEntryCreateCFProperty(service, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?
+        .takeRetainedValue() else { return nil }
+    if let n = prop as? NSNumber { return n.doubleValue / 1_000_000_000 }
+    if let d = prop as? Data, d.count >= 8 {
+        let ns = d.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
+        return Double(ns) / 1_000_000_000
+    }
+    return nil
+}
 
 // MARK: - Logging
 
@@ -135,6 +151,9 @@ struct SessionRecord: Codable {
 struct PersistentState: Codable {
     var dailyCounts: [String: [String: Int]] = [:]
     var session: SessionRecord?
+    var notes: [NoteItem]?
+    /// When a session of each mode last ended (for cooldown_minutes).
+    var lastEnded: [String: Date]?
 
     static func load() -> PersistentState {
         guard let d = try? Data(contentsOf: URL(fileURLWithPath: Paths.state)),

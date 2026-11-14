@@ -23,6 +23,9 @@ struct LockView: View {
                     Text("Waiting for the Intent Mode daemon…")
                         .foregroundColor(.orange)
                 }
+                if let b = model.status?.bedtimeNotice {
+                    Text("🌙 \(b)").font(.system(size: 15, weight: .medium)).foregroundColor(Color(red: 0.7, green: 0.75, blue: 1))
+                }
                 if let n = model.status?.notice {
                     Text(n).foregroundColor(.orange).multilineTextAlignment(.center)
                 }
@@ -34,6 +37,7 @@ struct LockView: View {
                         IntentEntry(model: model, mode: mode, minWords: mode.intentMinWords)
                     } else {
                         ModeGrid(model: model, modes: st.modes)
+                        NotesBox(model: model, notes: st.notes)
                     }
                 }
 
@@ -101,6 +105,39 @@ struct ModeGrid: View {
         if let l = m.dailyLimit { parts.append("\(max(0, l - m.usedToday)) of \(l) left today") }
         if let w = m.weeklyLimit { parts.append("\(max(0, w - m.usedThisWeek)) of \(w) this week") }
         return parts.isEmpty ? "no limit" : parts.joined(separator: " · ")
+    }
+}
+
+/// "Note for later": jot a thought down instead of opening a session for it.
+struct NotesBox: View {
+    @ObservedObject var model: AppModel
+    let notes: [NoteItem]
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !compact {
+                HStack {
+                    TextField("Note for later — e.g. \"look up car rentals in Lisbon\"", text: $model.noteText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { model.addNote() }
+                    Button("Save") { model.addNote() }.disabled(model.noteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            ForEach(notes.prefix(compact ? 5 : 30)) { n in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•").opacity(0.6)
+                    Text(n.text).font(.system(size: compact ? 11 : 13)).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button { model.deleteNote(n.id) } label: { Image(systemName: "xmark.circle.fill").opacity(0.5) }
+                        .buttonStyle(.plain)
+                        .help("Done — delete this note")
+                }
+                .foregroundColor(.white)
+            }
+        }
+        .padding(compact ? 0 : 14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(compact ? Color.clear : card))
     }
 }
 
@@ -259,6 +296,15 @@ struct SessionView: View {
             }
             if warning {
                 Text("Less than \(max(1, remaining / 60 + (remaining % 60 > 0 ? 1 : 0))) min left — wrap up.").font(.system(size: 12, weight: .medium))
+            }
+            if let idle = st?.idleSeconds, let limit = st?.idleLimitSeconds, limit - idle <= 60 {
+                Text("No activity — the session ends in \(max(0, limit - idle)) s. Move the mouse to keep it.")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            if st?.state == "session", st?.modes.first(where: { $0.id == st?.modeId })?.openWeb == true,
+               let notes = st?.notes, !notes.isEmpty {
+                Text("Your notes:").font(.system(size: 11, weight: .semibold)).opacity(0.8)
+                NotesBox(model: model, notes: notes, compact: true)
             }
             if st?.state == "session" { ExtensionControls(model: model) }
             if let e = model.errorText {
