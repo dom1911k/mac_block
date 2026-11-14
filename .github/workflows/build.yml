@@ -45,3 +45,9 @@ jobs:
         run: bash scripts/build.sh "ci"
       - name: Functional test (install, block/allow checks, uninstall)
         run: bash scripts/ci-functional-test.sh
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-artifacts
+          path: ci-artifacts

@@ -242,7 +242,19 @@ final class Daemon {
     // MARK: requests
 
     func handle(_ r: IPCRequest, uid: uid_t) -> IPCResponse {
-        queue.sync { handleOnQueue(r, uid: uid) }
+        let t0 = Date()
+        var waited = 0.0
+        let resp: IPCResponse = queue.sync {
+            waited = Date().timeIntervalSince(t0)
+            return handleOnQueue(r, uid: uid)
+        }
+        let took = Date().timeIntervalSince(t0)
+        if r.cmd != "status" && r.cmd != "app_launched" {
+            Log.info("request \(r.cmd)\(r.mode.map { " \($0)" } ?? "") from uid \(uid) → \(resp.ok ? "ok" : "failed: \(resp.error ?? "")") (\(String(format: "%.2f", took)) s)")
+        } else if took > 1 {
+            Log.warn("slow \(r.cmd) request: waited \(String(format: "%.2f", waited)) s, total \(String(format: "%.2f", took)) s")
+        }
+        return resp
     }
 
     private func handleOnQueue(_ r: IPCRequest, uid: uid_t) -> IPCResponse {

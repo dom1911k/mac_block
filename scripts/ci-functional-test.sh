@@ -19,11 +19,14 @@ nxdomain()   { dig @127.0.0.1 +time=3 +tries=1 "$1" A | grep -q 'status: NXDOMAI
 fetch()      { curl -s -o /dev/null -m 10 "$1"; }
 first_service() { networksetup -listallnetworkservices | tail -n +2 | sed 's/^\*//' | head -1; }
 
+ART="$PWD/ci-artifacts"; mkdir -p "$ART"
+shot() { screencapture -x "$ART/$1.png" 2>/dev/null || sudo screencapture -x "$ART/$1.png" 2>/dev/null; }
 cleanup() {
-  echo "== daemon.log =="; sudo cat "$BASE/daemon.log" 2>/dev/null | tail -n 60
-  echo "== guard.log ==";  sudo cat "$BASE/guard.log" 2>/dev/null | tail -n 20
-  echo "== uninstall =="
-  [ -f "$BASE/uninstall.sh" ] && sudo bash "$BASE/uninstall.sh" --yes
+  [ -f "$BASE/uninstall.sh" ] && sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1
+  cp /Users/Shared/IntentMode/last-logs/* "$ART"/ 2>/dev/null
+  echo "== daemon.log =="; cat "$ART/daemon.log" 2>/dev/null | tail -n 80
+  echo "== guard.log ==";  cat "$ART/guard.log" 2>/dev/null | tail -n 20
+  echo "== screen log =="; cat "$ART/IntentMode-screen.log" 2>/dev/null | tail -n 60
 }
 trap cleanup EXIT
 
@@ -38,8 +41,11 @@ print(json.dumps(c, indent=2))
 PY
 
 echo "== Installing in test mode (5 min) =="
+echo "console user: $(stat -f %Su /dev/console)"
 sudo bash "$PKG/install.sh" --test 5 || { bad "install"; exit 1; }
 sleep 10
+shot 1-locked
+check "intent screen process is running"  pgrep -f IntentScreen.app/Contents/MacOS/IntentScreen
 
 echo "== Daemon =="
 check "daemon is running"                 sudo launchctl print system/com.intentmode.daemon
@@ -61,7 +67,24 @@ refuse "other DNS server 8.8.8.8 is blocked"                dig @8.8.8.8 +time=2
 refuse "resolving via 8.8.8.8 returns nothing usable"       bash -c "dig @8.8.8.8 +time=2 +tries=1 +short example.com | grep -qE '^[0-9]'"
 
 echo "== Claude session =="
-check  "session starts"                    intentmode start claude this is an automated test session for continuous integration checks
+check  "session starts"                    intentmode start journal this is an automated test session for continuous integration checks
+sleep 3
+shot 2-session
+echo "  status timings during the session:"
+slow=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  t0=$(python3 -c 'import time;print(time.time())')
+  st=$(intentmode status 2>&1 | grep '^State' || echo "State: ERROR")
+  t1=$(python3 -c 'import time;print(time.time())')
+  ms=$(python3 -c "print(int(($t1-$t0)*1000))")
+  echo "    $st  (${ms} ms)"
+  [ "$ms" -gt 1500 ] && slow=$((slow+1))
+  sleep 1
+done
+check  "status says SESSION"               bash -c "intentmode status | grep -q 'State: SESSION'"
+check  "status answers quickly in session" test "$slow" -le 1
+intentmode end ci switch >/dev/null 2>&1; sleep 2
+check  "claude session starts"             intentmode start claude this is an automated test session for continuous integration checks
 sleep 2
 check  "https://pypi.org loads"            fetch https://pypi.org
 check  "https://claude.ai resolves"        resolves claude.ai

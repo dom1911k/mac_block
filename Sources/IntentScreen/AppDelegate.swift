@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var allowQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ScreenLog.write("IntentScreen \(BuildInfo.version) started (pid \(getpid()))")
         NSApp.appearance = NSAppearance(named: .darkAqua)
         buildMainMenu()
         model.poll()
@@ -106,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let state = (model.daemonReachable ? st?.state : nil) ?? "locked"
         if state != lastState {
+            ScreenLog.write("UI: \(lastState ?? "start") → \(state) (daemon reachable: \(model.daemonReachable))")
             model.errorText = nil
             model.confirmEnd = false
             lastState = state

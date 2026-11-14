@@ -36,6 +36,10 @@ fi
 LOGS=/Users/Shared/IntentMode/last-logs
 mkdir -p "$LOGS"
 cp "$BASE"/*.log "$BASE"/sessions.jsonl "$BASE"/config.json "$LOGS"/ 2>/dev/null
+CONSOLE_USER="$(stat -f %Su /dev/console)"
+if [ "$CONSOLE_USER" != root ]; then
+  cp "$(eval echo "~$CONSOLE_USER")/Library/Logs/IntentMode-screen.log" "$LOGS"/ 2>/dev/null
+fi
 chmod -R a+rX /Users/Shared/IntentMode 2>/dev/null
 
 # Stop the backup timer of a test install.
