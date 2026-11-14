@@ -262,6 +262,7 @@ final class ConfigUpgraderTests: XCTestCase {
             "domain_groups": ["mine": ["b.com"], "apple_swupdate": ["=swscan.apple.com"]],
             "locked_allowed_domains": ["=time.apple.com", "@apple_swupdate"],
             "idle_end_minutes": 5,
+            "brand_new_setting": true,
         ]
         var state = ConfigUpgrader.State()
         state.knownDefaultModes = ["claude", "journal", "deleted"]   // "deleted" was removed by the user earlier
@@ -275,7 +276,8 @@ final class ConfigUpgraderTests: XCTestCase {
         XCTAssertEqual((out["domain_groups"] as! [String: Any])["mine"] as? [String], ["a.com"])
         XCTAssertNotNil((out["domain_groups"] as! [String: Any])["apple_swupdate"])
         XCTAssertEqual(out["locked_allowed_domains"] as? [String], ["=time.apple.com", "@apple_swupdate"])
-        XCTAssertEqual(out["idle_end_minutes"] as? Int, 5)
+        XCTAssertNil(out["idle_end_minutes"])                     // existed before → user removed it → stays removed
+        XCTAssertEqual(out["brand_new_setting"] as? Bool, true)  // new in a later version → added
         XCTAssertFalse(notes.isEmpty)
         // Running again changes nothing.
         let (_, notes2, _) = ConfigUpgrader.upgrade(user: out, defaults: defaults, state: st)

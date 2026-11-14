@@ -207,6 +207,11 @@ servers, for macOS updates and installing the Chrome profile.
 **Usage overview:** "This week" on the lock screen, `intentmode week` in Terminal, and an automatic review the first
 time the lock screen shows on a Sunday. It's built from `sessions.jsonl`.
 
+**Updates and your config:** a new version never replaces `config.json`. On start, the daemon adds new settings,
+domain groups and modes, and applies one-time changes only where the old default is still set. Your own values and
+deleted modes are left alone. A backup `config.json.bak-…` is written first. To switch bedtime off, set
+`"bedtime": null`.
+
 Other keys: `intent_min_words`, `warning_seconds`, `extension_*`, `daily_limit`/`minutes` per mode,
 `flags.claude_mode_allow_google_search`, `system_path_prefixes` (which macOS components are always allowed),
 `always_allowed_bundle_ids`, `never_allowed_bundle_ids`, `chrome_forbidden_flags`, `doh_block_ips`, `exempt_users`

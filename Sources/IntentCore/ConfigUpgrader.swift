@@ -31,6 +31,10 @@ public enum ConfigUpgrader {
                   note: "macOS can check for updates during sessions"),
     ]
 
+    /// Settings that existed before the upgrader did (0.3.1). If one of these is missing, you removed it on
+    /// purpose, so it isn't added back. Only settings introduced later are added automatically.
+    static let baselineKeys: Set<String> = ["_readme", "always_allowed_bundle_ids", "always_blocked_domains", "app_kill_grace_seconds", "bedtime", "blocklist_exceptions", "blocklist_files", "blocklist_sources", "chrome_bundle_id", "chrome_forbidden_flags", "doh_block_ips", "domain_groups", "escape_challenge_length", "escape_reason_min_words", "escape_wait_minutes", "exempt_users", "extension_min_reason_words", "extension_minutes", "extension_wait_seconds", "flags", "force_safe_search", "idle_end_minutes", "intent_min_words", "learn_max_minutes", "locked_allowed_domains", "modes", "never_allowed_bundle_ids", "pf_allow_inbound_ssh", "pf_restrict_upstream_to_root", "quiet_hours", "schema_version", "session_allowed_domains", "system_path_prefixes", "upstream_dns", "warning_seconds"]
+
     public struct State: Codable {
         public var applied: [String] = []
         public var knownDefaultModes: [String]?
@@ -43,7 +47,7 @@ public enum ConfigUpgrader {
         var notes: [String] = []
         var st = state
 
-        for (k, v) in defaults where cfg[k] == nil {
+        for (k, v) in defaults where cfg[k] == nil && !baselineKeys.contains(k) {
             cfg[k] = v
             notes.append("added setting '\(k)'")
         }

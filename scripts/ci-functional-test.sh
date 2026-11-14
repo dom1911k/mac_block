@@ -38,7 +38,7 @@ c = json.load(open(sys.argv[1]))
 c["locked_allowed_domains"] += ["github.com", "githubusercontent.com", "githubassets.com", "githubapp.com",
                                 "windows.net", "visualstudio.com", "azure.com", "msftauth.net"]
 c["idle_end_minutes"] = 0   # nobody touches the CI Mac's keyboard
-c.pop("bedtime", None)     # CI runs in UTC at any hour
+c["bedtime"] = None        # CI runs in UTC at any hour (null = bedtime off)
 c["escape_wait_minutes"] = 0
 for m in c["modes"]:
     if m["id"] == "research":
@@ -182,6 +182,8 @@ check  "open session ends"                         intentmode end done
 sleep 1
 check  "weekly overview counts the sessions"       python3 /tmp/im_escape.py week
 check  "lock screen shows today's usage"           bash -c "intentmode status >/dev/null"
+
+check  "config upgrader keeps a disabled bedtime off" bash -c "! intentmode status | grep -q Bedtime && ! grep -q 'added setting .bedtime' '$BASE/daemon.log'"
 
 echo "== Uninstall restores everything =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1
