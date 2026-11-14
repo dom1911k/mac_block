@@ -165,8 +165,11 @@ final class AppWatcher {
     }
 
     /// "/Applications/Google Chrome.app/Contents/Frameworks/…/Helper.app/…" → "/Applications/Google Chrome.app"
+    /// Apps nested inside a .framework (e.g. Python.framework/…/Python.app, which every `python3` runs from)
+    /// are helpers of command-line tools, not apps the user opened: they're treated like CLI tools.
     private func outerBundle(_ path: String) -> String? {
         guard let r = path.range(of: ".app/") else { return nil }
+        if let f = path.range(of: ".framework/"), f.lowerBound < r.lowerBound { return nil }
         return String(path[..<r.lowerBound]) + ".app"
     }
 

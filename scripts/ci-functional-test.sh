@@ -170,7 +170,10 @@ check  "a 25+ word reason is accepted"             python3 /tmp/im_escape.py req
 check  "a 150-character retype text is shown"      python3 /tmp/im_escape.py challenge_len
 check  "a wrong retype is refused"                 python3 /tmp/im_escape.py wrong
 check  "the exact retype is accepted"              python3 /tmp/im_escape.py right
-check  "the open session starts after the wait"    python3 /tmp/im_escape.py confirm
+# The intent screen confirms by itself once the wait is over; whichever is first wins.
+python3 /tmp/im_escape.py confirm >/dev/null 2>&1; sleep 2
+check  "the open session starts after the wait"    bash -c "intentmode status | grep -q 'State: SESSION — Open session'"
+check  "python3 is not quit in a session (CLI tool)" python3 -c "import time; time.sleep(3)"
 sleep 2
 check  "open web works in the open session"        fetch https://example.com
 check  "reddit.com still refused"                  nxdomain www.reddit.com
