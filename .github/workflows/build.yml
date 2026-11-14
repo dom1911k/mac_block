@@ -33,3 +33,15 @@ jobs:
         with:
           name: build-log
           path: build.log
+
+  functional:
+    # Installs the test mode on the throwaway runner and checks real blocking end to end.
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build package
+        run: bash scripts/build.sh "ci"
+      - name: Functional test (install, block/allow checks, uninstall)
+        run: bash scripts/ci-functional-test.sh
