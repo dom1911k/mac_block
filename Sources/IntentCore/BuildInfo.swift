@@ -1,6 +1,6 @@
 // The version line is rewritten by scripts/build.sh from the VERSION file.
 public enum BuildInfo {
-    public static let version = "0.3.0"
+    public static let version = "0.3.1"
 
     /// Dev builds include `learn`, `emergency-off` and the emergency button on the intent screen.
     /// Release builds (Phase 4) are compiled with INTENTMODE_RELEASE and drop them.

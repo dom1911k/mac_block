@@ -250,6 +250,39 @@ final class StatsTests: XCTestCase {
     }
 }
 
+final class ConfigUpgraderTests: XCTestCase {
+    func testUpgradeKeepsUserEdits() {
+        let user: [String: Any] = [
+            "modes": [["id": "claude", "minutes": 30, "daily_limit": 5], ["id": "journal", "minutes": 20]],
+            "domain_groups": ["mine": ["a.com"]],
+            "locked_allowed_domains": ["=time.apple.com"],
+        ]
+        let defaults: [String: Any] = [
+            "modes": [["id": "claude", "minutes": 10, "daily_limit": 2], ["id": "journal"], ["id": "maintenance", "name": "Maintenance"], ["id": "deleted"]],
+            "domain_groups": ["mine": ["b.com"], "apple_swupdate": ["=swscan.apple.com"]],
+            "locked_allowed_domains": ["=time.apple.com", "@apple_swupdate"],
+            "idle_end_minutes": 5,
+        ]
+        var state = ConfigUpgrader.State()
+        state.knownDefaultModes = ["claude", "journal", "deleted"]   // "deleted" was removed by the user earlier
+        let (out, notes, st) = ConfigUpgrader.upgrade(user: user, defaults: defaults, state: state)
+        let modes = out["modes"] as! [[String: Any]]
+        let claude = modes.first { ($0["id"] as? String) == "claude" }!
+        XCTAssertEqual(claude["minutes"] as? Int, 10)        // was still the old default 30
+        XCTAssertEqual(claude["daily_limit"] as? Int, 5)     // user's own value is kept
+        XCTAssertTrue(modes.contains { ($0["id"] as? String) == "maintenance" })
+        XCTAssertFalse(modes.contains { ($0["id"] as? String) == "deleted" })
+        XCTAssertEqual((out["domain_groups"] as! [String: Any])["mine"] as? [String], ["a.com"])
+        XCTAssertNotNil((out["domain_groups"] as! [String: Any])["apple_swupdate"])
+        XCTAssertEqual(out["locked_allowed_domains"] as? [String], ["=time.apple.com", "@apple_swupdate"])
+        XCTAssertEqual(out["idle_end_minutes"] as? Int, 5)
+        XCTAssertFalse(notes.isEmpty)
+        // Running again changes nothing.
+        let (_, notes2, _) = ConfigUpgrader.upgrade(user: out, defaults: defaults, state: st)
+        XCTAssertEqual(notes2, [])
+    }
+}
+
 final class MiscTests: XCTestCase {
     func testVersions() {
         XCTAssertTrue(VersionCompare.isNewer("0.1.1", than: "0.1.0"))

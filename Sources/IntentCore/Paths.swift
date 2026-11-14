@@ -23,6 +23,7 @@ public enum Paths {
     public static var emergencyScript: String { base + "/emergency-off.sh" }
     public static var guardBinary: String { base + "/intentguard" }
     public static var uninstallScript: String { base + "/uninstall.sh" }
+    public static var configUpgradeState: String { base + "/config-upgrades.json" }
 
     // Test mode: launchd plists live inside the IntentMode folder instead of /Library/Launch*,
     // so nothing starts again after a reboot, and a one-shot cleanup job undoes everything at boot.

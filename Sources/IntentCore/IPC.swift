@@ -54,6 +54,7 @@ public struct ModeStatus: Codable, Identifiable {
     public var intentMinWords: Int = 8
     public var startDelaySeconds: Int = 0
     public var escapeHatch: Bool = false
+    public var corner: Bool = false
 
     public init(id: String, name: String, description: String?, minutes: Int, dailyLimit: Int?,
                 usedToday: Int, available: Bool, unavailableReason: String?) {
@@ -111,6 +112,9 @@ public struct DaemonStatus: Codable {
     /// Today at a glance.
     public var todayMinutes: Int = 0
     public var todaySessions: Int = 0
+    /// macOS reports a recommended software update (read from the system's own update check).
+    public var macUpdateAvailable: Bool = false
+    public var macUpdateName: String?
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,
                 endsAt: Double? = nil, remainingSeconds: Int? = nil, warning: Bool = false,

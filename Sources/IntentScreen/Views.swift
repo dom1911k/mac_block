@@ -74,9 +74,15 @@ struct ModeGrid: View {
     @ObservedObject var model: AppModel
     let modes: [ModeStatus]
 
+    /// Only modes you can start right now; corner modes (Maintenance) live in the footer.
+    private var visible: [ModeStatus] { modes.filter { $0.available && !$0.corner } }
+
     var body: some View {
         VStack(spacing: 8) {
-            ForEach(modes) { m in
+            if visible.isEmpty {
+                Text("Nothing is available right now.").font(.system(size: 15)).foregroundColor(.white.opacity(0.6)).padding(.vertical, 20)
+            }
+            ForEach(visible) { m in
                 Button {
                     model.errorText = nil
                     model.infoText = nil
@@ -276,6 +282,22 @@ struct Footer: View {
                 }
                 Button("This week") { model.openWeek() }
                 Spacer()
+                ForEach(model.status?.modes.filter { $0.corner && $0.available } ?? []) { m in
+                    let update = model.status?.macUpdateAvailable == true && m.id == "maintenance"
+                    Button {
+                        model.errorText = nil
+                        model.intentText = ""
+                        model.selectedMode = m.id
+                    } label: {
+                        Text(update ? "\(m.name) · update available" : m.name)
+                            .font(.system(size: 11, weight: update ? .semibold : .regular))
+                            .foregroundColor(update ? .white : .white.opacity(0.6))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(update ? Color.red : Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help(update ? (model.status?.macUpdateName ?? "A macOS update is available") : (m.description ?? ""))
+                }
                 if model.status?.chromePolicyMissing == true {
                     ChromeWarning(model: model)
                 }

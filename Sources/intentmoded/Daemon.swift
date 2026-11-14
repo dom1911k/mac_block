@@ -46,6 +46,8 @@ final class Daemon {
     private var escape: EscapeFlow?
     private var chromePolicyMissing = false
     private var statsCache: (at: Date, stats: WeekStats)?
+    private var macUpdateAvailable = false
+    private var macUpdateName: String?
     private var timer: DispatchSourceTimer?
 
     private let box: PolicyBox
@@ -62,6 +64,7 @@ final class Daemon {
         for dir in [Paths.base, Paths.versions, Paths.staging, Paths.learned] {
             try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
         }
+        Self.upgradeConfigFile()
         var loaded: IntentConfig
         var notice: String?
         do {
@@ -89,6 +92,46 @@ final class Daemon {
         apps = AppWatcher(config: Self.appsConfig(loaded, testMode: TestMode.load() != nil))
         blocklist = Self.loadBlocklist(loaded)
         control = ControlServer { [unowned self] req, uid in self.handle(req, uid: uid) }
+    }
+
+    /// Applies ConfigUpgrader to config.json using this version's bundled defaults.
+    static func upgradeConfigFile() {
+        let defaultsPath = Paths.current + "/Resources/config.default.json"
+        guard let userData = try? Data(contentsOf: URL(fileURLWithPath: Paths.config)),
+              let defData = try? Data(contentsOf: URL(fileURLWithPath: defaultsPath)),
+              let user = try? JSONSerialization.jsonObject(with: userData) as? [String: Any],
+              let defs = try? JSONSerialization.jsonObject(with: defData) as? [String: Any] else { return }
+        var state = ConfigUpgrader.State()
+        if let d = try? Data(contentsOf: URL(fileURLWithPath: Paths.configUpgradeState)),
+           let s = try? JSONDecoder().decode(ConfigUpgrader.State.self, from: d) { state = s }
+        let (upgraded, notes, newState) = ConfigUpgrader.upgrade(user: user, defaults: defs, state: state)
+        if !notes.isEmpty, let out = try? JSONSerialization.data(withJSONObject: upgraded, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) {
+            // Only write if the result is a valid config.
+            if (try? IntentConfig.parse(out)) != nil {
+                try? FileManager.default.copyItem(atPath: Paths.config, toPath: Paths.config + ".bak-\(Int(Date().timeIntervalSince1970))")
+                try? FileUtil.writeAtomically(out + Data("\n".utf8), to: Paths.config, mode: 0o644)
+                Log.info("config upgraded: " + notes.joined(separator: "; "))
+            } else {
+                Log.warn("config upgrade skipped: the result would not be valid")
+                return
+            }
+        }
+        if let d = try? JSONEncoder().encode(newState) { try? FileUtil.writeAtomically(d, to: Paths.configUpgradeState, mode: 0o644) }
+    }
+
+    /// Reads macOS's own update check results (no network needed here).
+    private func checkMacUpdates() {
+        DispatchQueue.global().async {
+            let prefs = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.SoftwareUpdate.plist")
+            let recommended = prefs?["RecommendedUpdates"] as? [[String: Any]] ?? []
+            let count = (prefs?["LastRecommendedUpdatesAvailable"] as? Int) ?? recommended.count
+            let name = recommended.first?["Display Name"] as? String
+            self.queue.async {
+                if (count > 0) != self.macUpdateAvailable { Log.info("macOS update available: \(count > 0) \(name ?? "")") }
+                self.macUpdateAvailable = count > 0
+                self.macUpdateName = name
+            }
+        }
     }
 
     // MARK: lifecycle
@@ -183,6 +226,7 @@ final class Daemon {
         }
         if tickCount % 30 == 0 { pf.expire() }
         if tickCount % 60 == 5 { checkChromePolicy() }
+        if tickCount % 600 == 7 { checkMacUpdates() }
         if tickCount % 60 == 0 {
             var inSession = false
             if case .session = phase { inSession = true }
@@ -461,6 +505,7 @@ final class Daemon {
             ms.intentMinWords = config.intentMinWords(for: m)
             ms.startDelaySeconds = m.startDelaySeconds ?? 0
             ms.escapeHatch = m.isEscapeHatch
+            ms.corner = m.showAs == "corner"
             return ms
         }
         let exempt = userName(uid).map { config.exemptUsers.contains($0) } ?? false
@@ -470,6 +515,8 @@ final class Daemon {
         st.testEndsAt = testEndsAt?.timeIntervalSince1970
         st.notes = pstate.notes ?? []
         st.chromePolicyMissing = chromePolicyMissing
+        st.macUpdateAvailable = macUpdateAvailable
+        st.macUpdateName = macUpdateName
         st.escapeReasonMinWords = config.escapeReasonMinWords
         if let e = escape {
             st.escapeStage = e.stage.rawValue

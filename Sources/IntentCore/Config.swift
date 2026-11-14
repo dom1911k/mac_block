@@ -140,6 +140,8 @@ public struct ModeConfig: Codable {
     public var schedule: [ScheduleWindow]?
     /// The open session (escape hatch): started only through the reason → retype challenge → wait steps.
     public var escapeHatch: Bool?
+    /// "corner": shown as a small button in the lock screen's corner instead of a tile.
+    public var showAs: String?
 
     public var isEscapeHatch: Bool { escapeHatch == true }
 
@@ -158,6 +160,7 @@ public struct ModeConfig: Codable {
         case idleEndMinutes = "idle_end_minutes"
         case schedule
         case escapeHatch = "escape_hatch"
+        case showAs = "show_as"
     }
 
     public init(from decoder: Decoder) throws {
@@ -181,6 +184,7 @@ public struct ModeConfig: Codable {
         idleEndMinutes = try c.decodeIfPresent(Int.self, forKey: .idleEndMinutes)
         schedule = try c.decodeIfPresent([ScheduleWindow].self, forKey: .schedule)
         escapeHatch = try c.decodeIfPresent(Bool.self, forKey: .escapeHatch)
+        showAs = try c.decodeIfPresent(String.self, forKey: .showAs)
     }
 
     /// The end of the schedule window `date` is in, or nil if outside every window. Unscheduled modes: distantFuture.

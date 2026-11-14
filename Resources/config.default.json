@@ -132,6 +132,16 @@
       "webtoonxyz.com",
       "yande.re"
     ],
+    "apple_swupdate": [
+      "=swscan.apple.com",
+      "=swdist.apple.com",
+      "=swcdn.apple.com",
+      "=gdmf.apple.com",
+      "=mesu.apple.com",
+      "=xp.apple.com",
+      "=updates.cdn-apple.com",
+      "=osrecovery.apple.com"
+    ],
     "apple_updates": [
       "apple.com",
       "icloud.com",
@@ -277,7 +287,8 @@
   "intent_min_words": 8,
   "learn_max_minutes": 30,
   "locked_allowed_domains": [
-    "=time.apple.com"
+    "=time.apple.com",
+    "@apple_swupdate"
   ],
   "modes": [
     {
@@ -304,7 +315,7 @@
           "flag": "claude_mode_allow_google_search"
         }
       ],
-      "daily_limit": 3,
+      "daily_limit": 2,
       "description": "Claude, coding docs, GitHub and package registries",
       "domains": [
         "claude.ai",
@@ -332,7 +343,7 @@
           "bundle_id": "com.anthropic.claudefordesktop"
         }
       ],
-      "minutes": 30,
+      "minutes": 10,
       "name": "Claude / vibe coding"
     },
     {
@@ -472,6 +483,7 @@
       ],
       "minutes": 30,
       "name": "Maintenance",
+      "show_as": "corner",
       "weekly_limit": 2
     },
     {
@@ -543,7 +555,8 @@
   "schema_version": 1,
   "session_allowed_domains": [
     "=ocsp.apple.com",
-    "=ocsp2.apple.com"
+    "=ocsp2.apple.com",
+    "@apple_swupdate"
   ],
   "system_path_prefixes": [
     "/System/Library/",
