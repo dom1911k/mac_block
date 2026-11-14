@@ -27,6 +27,8 @@ struct NoPasteTextEditor: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 17
     var focusOnAppear = true
+    /// Called when Return is pressed (instead of inserting a new line). ⌥Return still adds a line break.
+    var onSubmit: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -77,6 +79,15 @@ struct NoPasteTextEditor: NSViewRepresentable {
         func textDidChange(_ n: Notification) {
             guard let tv = n.object as? NSTextView else { return }
             parent.text = tv.string
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            if selector == #selector(NSResponder.insertNewline(_:)), let submit = parent.onSubmit {
+                parent.text = textView.string
+                submit()
+                return true
+            }
+            return false
         }
     }
 }

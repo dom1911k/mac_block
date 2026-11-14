@@ -77,6 +77,31 @@ final class DNSTests: XCTestCase {
     }
 }
 
+final class SafeSearchTests: XCTestCase {
+    func testTargets() {
+        XCTAssertEqual(SafeSearch.target(for: "www.google.com"), "forcesafesearch.google.com")
+        XCTAssertEqual(SafeSearch.target(for: "google.de."), "forcesafesearch.google.com")
+        XCTAssertEqual(SafeSearch.target(for: "www.google.co.uk"), "forcesafesearch.google.com")
+        XCTAssertNil(SafeSearch.target(for: "docs.google.com"))
+        XCTAssertNil(SafeSearch.target(for: "accounts.google.com"))
+        XCTAssertNil(SafeSearch.target(for: "google.example.org"))
+        XCTAssertEqual(SafeSearch.target(for: "www.youtube.com"), "restrict.youtube.com")
+        XCTAssertEqual(SafeSearch.target(for: "www.bing.com"), "strict.bing.com")
+        XCTAssertEqual(SafeSearch.target(for: "duckduckgo.com"), "safe.duckduckgo.com")
+    }
+
+    func testAnswerUnderOriginalName() {
+        let q = DNSMessage.makeQuery(id: 42, name: "www.google.com", qtype: DNSMessage.typeA)
+        let question = DNSMessage.parseQuestion(q)!
+        let recs = [DNSMessage.Record(type: 1, ttl: 300, rdata: [216, 239, 38, 120])]
+        let r = DNSMessage.makeAnswer(query: q, question: question, records: recs)
+        XCTAssertEqual(DNSMessage.id(r), 42)
+        XCTAssertEqual(DNSMessage.rcode(r), 0)
+        XCTAssertEqual(DNSMessage.addresses(in: r), [DNSMessage.Address(ip: "216.239.38.120", ttl: 300)])
+        XCTAssertEqual(DNSMessage.addressRecords(in: r).count, 1)
+    }
+}
+
 final class ConfigTests: XCTestCase {
     let json = """
     {
@@ -150,6 +175,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertNotNil(c.mode("claude"))
         XCTAssertNotNil(c.mode("journal"))
         XCTAssertEqual(c.mode("research")?.isOpenWeb, true)
+        XCTAssertEqual(c.mode("research")?.startDelaySeconds, 60)
+        let always = DomainMatcher(entries: c.expand(c.alwaysBlockedDomains))
+        XCTAssertTrue(always.matches("mangafire.to"))
+        XCTAssertTrue(always.matches("dns.google"))
+        XCTAssertFalse(always.matches("github.com"))
         let anchor = PFRules.anchor(config: c, restrictUpstreamToRoot: true)
         XCTAssertTrue(anchor.contains("block return out quick all"))
         XCTAssertTrue(anchor.contains("user root"))

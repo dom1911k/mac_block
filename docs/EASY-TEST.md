@@ -35,7 +35,7 @@ Just play with it. Here are good things to check:
 1. The screen says **What are you here for?** You can't switch apps (⌘-Tab) or open Force Quit (⌘⌥Esc).
 2. Press ⌘Space and open Notes. It closes again within a second.
 3. Pick **Journal**, try to start with a short intent (fewer than 8 words): it won't let you. Try pasting text:
-   it won't let you either. Type a real sentence and start.
+   it won't let you either. Type a real sentence and press Return.
 4. Chrome opens on your journal document. Sign in to Google if needed and type something.
 5. In Chrome, open a new window (⌘N) and try `reddit.com`, `youtube.com` and `google.com`. None of them load.
 6. The small timer window is in the top-right corner. Try **+10 min…**: it makes you wait 60 seconds, then asks
@@ -43,10 +43,12 @@ Just play with it. Here are good things to check:
 7. Click **End session → End now**. Chrome closes and the lock screen comes back.
 8. Start **Claude / vibe coding**: claude.ai and github.com work, youtube.com doesn't.
 9. Try to open Safari at any time. It always closes.
-10. Start **Research**: it needs at least 12 words, then waits 30 seconds (you can cancel during the pause).
+10. Start **Research**: it needs at least 12 words, then waits 60 seconds (you can cancel during the pause).
     Afterwards any normal website works, such as a car rental or dealer site, but reddit.com and youtube.com
     don't. Its tile shows how many you have left today and this week (2 a day, 5 a week).
-11. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
+11. In Research, try an adult site or a manga site like mangafire.to: it doesn't load. Search Google or Bing
+    for something explicit: results are filtered (SafeSearch is forced).
+12. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
 
 Also worth trying once: start a test and **restart the Mac** in the middle of it. After the restart Intent Mode is
 gone and the internet works.

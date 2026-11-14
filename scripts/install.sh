@@ -76,6 +76,11 @@ install -m 755 "$PKG/bin/intentguard" "$BASE/intentguard"
 install -m 755 "$PKG/Resources/emergency-off.sh" "$BASE/emergency-off.sh"
 install -m 755 "$PKG/Resources/uninstall.sh" "$BASE/uninstall.sh"
 install -m 644 "$PKG/Resources/update_pubkey.b64" "$BASE/update_pubkey.b64"
+# Adult blocklists: copy the bundled snapshots unless newer (refreshed) copies already exist.
+for f in "$PKG"/Resources/blocklists/*; do
+  [ -f "$f" ] || continue
+  [ -f "$BASE/blocklists/$(basename "$f")" ] || install -m 644 "$f" "$BASE/blocklists/$(basename "$f")"
+done
 if [ -f "$BASE/config.json" ]; then
   echo "    keeping existing config.json"
 else

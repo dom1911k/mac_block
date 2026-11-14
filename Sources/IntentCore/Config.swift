@@ -32,6 +32,12 @@ public struct ConditionalDomains: Codable {
     public var domains: [String]
 }
 
+public struct BlocklistSource: Codable, Equatable {
+    public var url: String
+    /// The local file it is merged into (relative to the IntentMode folder), e.g. "blocklists/oisd-nsfw.txt".
+    public var file: String
+}
+
 public struct ModeConfig: Codable {
     public var id: String
     public var name: String
@@ -115,6 +121,14 @@ public struct IntentConfig: Codable {
     public var lockedAllowedDomains: [String] = ["=time.apple.com"]
     public var sessionAllowedDomains: [String] = []
     public var blocklistFiles: [String] = []
+    /// Blocked in every mode, including open-web modes and learn (e.g. "@adult_extra", "@bypass").
+    public var alwaysBlockedDomains: [String] = []
+    /// Exact names to let through even if a blocklist file contains them (false positives).
+    public var blocklistExceptions: [String] = []
+    /// Downloaded weekly (when reachable) and merged into the blocklist files — entries are only ever added.
+    public var blocklistSources: [BlocklistSource] = []
+    /// Force SafeSearch for Google, YouTube, Bing and DuckDuckGo at the DNS level.
+    public var forceSafeSearch: Bool = true
     public var systemPathPrefixes: [String] = ["/System/Library/", "/Library/Apple/", "/usr/libexec/", "/usr/sbin/", "/usr/bin/"]
     public var alwaysAllowedBundleIds: [String] = []
     public var neverAllowedBundleIds: [String] = ["com.apple.Safari"]
@@ -141,6 +155,10 @@ public struct IntentConfig: Codable {
         case lockedAllowedDomains = "locked_allowed_domains"
         case sessionAllowedDomains = "session_allowed_domains"
         case blocklistFiles = "blocklist_files"
+        case alwaysBlockedDomains = "always_blocked_domains"
+        case blocklistExceptions = "blocklist_exceptions"
+        case blocklistSources = "blocklist_sources"
+        case forceSafeSearch = "force_safe_search"
         case systemPathPrefixes = "system_path_prefixes"
         case alwaysAllowedBundleIds = "always_allowed_bundle_ids"
         case neverAllowedBundleIds = "never_allowed_bundle_ids"
@@ -173,6 +191,10 @@ public struct IntentConfig: Codable {
         lockedAllowedDomains = try v(.lockedAllowedDomains, d.lockedAllowedDomains)
         sessionAllowedDomains = try v(.sessionAllowedDomains, d.sessionAllowedDomains)
         blocklistFiles = try v(.blocklistFiles, d.blocklistFiles)
+        alwaysBlockedDomains = try v(.alwaysBlockedDomains, d.alwaysBlockedDomains)
+        blocklistExceptions = try v(.blocklistExceptions, d.blocklistExceptions)
+        blocklistSources = try v(.blocklistSources, d.blocklistSources)
+        forceSafeSearch = try v(.forceSafeSearch, d.forceSafeSearch)
         systemPathPrefixes = try v(.systemPathPrefixes, d.systemPathPrefixes)
         alwaysAllowedBundleIds = try v(.alwaysAllowedBundleIds, d.alwaysAllowedBundleIds)
         neverAllowedBundleIds = try v(.neverAllowedBundleIds, d.neverAllowedBundleIds)
@@ -255,6 +277,9 @@ public struct IntentConfig: Codable {
         }
         if intentMinWords < 1 { errs.append("intent_min_words must be at least 1") }
         if extensionMinutes < 0 || extensionWaitSeconds < 0 { errs.append("extension values must not be negative") }
+        for e in alwaysBlockedDomains where e.hasPrefix("@") && domainGroups[String(e.dropFirst())] == nil {
+            errs.append("always_blocked_domains: unknown domain group '\(e)'")
+        }
         var ids = Set<String>()
         for m in modes {
             if m.id.isEmpty || m.id.contains(where: { !($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }) {

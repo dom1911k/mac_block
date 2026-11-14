@@ -107,6 +107,16 @@ check  "https://www.wikipedia.org loads"            fetch https://www.wikipedia.
 check  "reddit.com refused (distraction list)"      nxdomain www.reddit.com
 check  "youtube.com refused (distraction list)"     nxdomain www.youtube.com
 check  "status shows weekly usage"                  bash -c "intentmode status | grep -q 'week 1/5'"
+echo "  -- adult filter (every mode, including open web) --"
+check  "mangafire.to refused (curated list)"        nxdomain mangafire.to
+check  "pornhub.com refused (OISD/HaGeZi lists)"    nxdomain www.pornhub.com
+check  "nhentai.net refused"                        nxdomain nhentai.net
+check  "dns.google refused (bypass list)"           nxdomain dns.google
+check  "archive.ph refused (bypass list)"           nxdomain archive.ph
+safe_ip() { dig @127.0.0.1 +short "$1" A | grep -E '^[0-9]' | sort | head -1; }
+check  "Google SafeSearch forced"                   test "$(safe_ip www.google.com)" = "$(safe_ip forcesafesearch.google.com)"
+check  "Bing strict SafeSearch forced"              test "$(safe_ip www.bing.com)" = "$(safe_ip strict.bing.com)"
+check  "a normal search page still loads"           fetch "https://duckduckgo.com/?q=car+rental"
 check  "research session ends"                      intentmode end done researching
 sleep 2
 refuse "example.com blocked again after research"   fetch https://example.com

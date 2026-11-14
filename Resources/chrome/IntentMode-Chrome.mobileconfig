@@ -37,6 +37,9 @@
 			<integer>1</integer>
 			<key>BrowserGuestModeEnabled</key>
 			<false/>
+			<!-- 1 = Chrome's own adult-site filter (Google's classification of every site you open). -->
+			<key>SafeSitesFilterBehavior</key>
+			<integer>1</integer>
 			<key>ForceGoogleSafeSearch</key>
 			<true/>
 			<!-- 2 = YouTube strict Restricted Mode. -->
@@ -59,7 +62,7 @@
 	<key>PayloadDisplayName</key>
 	<string>Intent Mode – Chrome policies</string>
 	<key>PayloadDescription</key>
-	<string>Turns off Chrome's own DNS-over-HTTPS, proxies, Incognito, guest mode and new extensions; forces SafeSearch and YouTube Restricted Mode.</string>
+	<string>Turns off Chrome's own DNS-over-HTTPS, proxies, Incognito, guest mode and new extensions; forces SafeSearch, YouTube Restricted Mode and Chrome's adult-site filter.</string>
 	<key>PayloadIdentifier</key>
 	<string>com.intentmode.chrome</string>
 	<key>PayloadType</key>

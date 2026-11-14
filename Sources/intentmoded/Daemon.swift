@@ -20,7 +20,7 @@ final class Daemon {
     private var config: IntentConfig
     private var configMTime: Date?
     private var notice: String?
-    private var blocklist = DomainMatcher()
+    private var blocklist = Blocklist()
     private var pstate = PersistentState.load()
     private var phase: Phase = .locked
     private var generation = 0
@@ -41,6 +41,7 @@ final class Daemon {
     private let dnsSettings = DNSSettingsEnforcer()
     private let apps: AppWatcher
     private let updater = Updater()
+    private let refresher = BlocklistRefresher()
     private var control: ControlServer!
 
     init() {
@@ -68,7 +69,7 @@ final class Daemon {
         self.notice = notice
         configMTime = FileUtil.mtime(Paths.config)
         let locked = Policy(kind: .locked, generation: 0, allow: DomainMatcher(entries: loaded.expand(loaded.lockedAllowedDomains)),
-                            block: DomainMatcher(), allowAll: false, apps: [])
+                            block: Blocklist(), allowAll: false, apps: [], safeSearch: true)
         box = PolicyBox(locked)
         pf = PFManager(config: loaded)
         dns = DNSServer(box: box, pf: pf, upstream: loaded.upstreamDns)
@@ -160,11 +161,19 @@ final class Daemon {
             pf.watchdog()
         }
         if tickCount % 30 == 0 { pf.expire() }
+        if tickCount % 60 == 0 {
+            var inSession = false
+            if case .session = phase { inSession = true }
+            refresher.maybeRefresh(sources: config.blocklistSources, inSession: inSession) { [weak self] in
+                self?.reloadBlocklist()
+            }
+        }
     }
 
     // MARK: policy
 
-    private static func loadBlocklist(_ c: IntentConfig) -> DomainMatcher {
+    /// Builds the always-on blocklist: the list files plus always_blocked_domains, minus exceptions.
+    static func loadBlocklist(_ c: IntentConfig) -> Blocklist {
         var m = DomainMatcher()
         for f in c.blocklistFiles {
             let path = f.hasPrefix("/") ? f : Paths.base + "/" + f
@@ -174,29 +183,40 @@ final class Daemon {
             }
             for e in DomainMatcher.entries(fromListFile: text) { m.add(e) }
         }
-        if !m.isEmpty { Log.info("blocklist loaded: \(m.count) entries") }
-        return m
+        for e in c.expand(c.alwaysBlockedDomains) { m.add(e) }
+        let exceptions = Set(c.blocklistExceptions.map { DomainMatcher.normalize($0.hasPrefix("=") ? String($0.dropFirst()) : $0) })
+        Log.info("blocklist loaded: \(m.count) entries, \(exceptions.count) exceptions")
+        return Blocklist(matcher: m, exceptions: exceptions)
+    }
+
+    /// Swap in a freshly loaded blocklist (after a config change or a weekly list refresh).
+    func reloadBlocklist() {
+        let c = queue.sync { config }
+        let b = Self.loadBlocklist(c)          // slow (~1 s): done off the daemon queue
+        queue.async {
+            self.blocklist = b
+            self.refreshPolicyInPlace()
+        }
     }
 
     private func makePolicy(generation g: Int) -> Policy {
         switch phase {
         case .locked:
             return Policy(kind: .locked, generation: g, allow: DomainMatcher(entries: config.expand(config.lockedAllowedDomains)),
-                          block: blocklist, allowAll: false, apps: [])
+                          block: blocklist, allowAll: false, apps: [], safeSearch: config.forceSafeSearch)
         case .session:
             let mode = pstate.session.flatMap { config.mode($0.modeId) }
             if let mode, mode.isOpenWeb {
-                // Open web: everything except the adult blocklist and the mode's blocked_domains.
-                var block = blocklist
-                for e in config.blockedDomains(for: mode) { block.add(e) }
-                return Policy(kind: .session, generation: g, allow: DomainMatcher(entries: ["*"]),
-                              block: block, allowAll: true, apps: mode.apps)
+                // Open web: everything except the always-on blocklist and the mode's blocked_domains.
+                return Policy(kind: .session, generation: g, allow: DomainMatcher(entries: ["*"]), block: blocklist,
+                              modeBlock: DomainMatcher(entries: config.blockedDomains(for: mode)),
+                              allowAll: true, apps: mode.apps, safeSearch: config.forceSafeSearch)
             }
             return Policy(kind: .session, generation: g, allow: DomainMatcher(entries: mode.map { config.domains(for: $0) } ?? []),
-                          block: blocklist, allowAll: false, apps: mode?.apps ?? [])
+                          block: blocklist, allowAll: false, apps: mode?.apps ?? [], safeSearch: config.forceSafeSearch)
         case .learn(let id, _):
             return Policy(kind: .learn, generation: g, allow: DomainMatcher(entries: ["*"]),
-                          block: blocklist, allowAll: true, apps: config.mode(id)?.apps ?? [])
+                          block: blocklist, allowAll: true, apps: config.mode(id)?.apps ?? [], safeSearch: config.forceSafeSearch)
         }
     }
 
@@ -518,7 +538,7 @@ final class Daemon {
         var lines: [String] = []
         if let mode = config.mode(id) {
             let known = DomainMatcher(entries: config.domains(for: mode))
-            lines = names.filter { $0.contains(".") && !known.matches($0) && !blocklist.matches($0) && !$0.hasSuffix(".arpa") }.sorted()
+            lines = names.filter { $0.contains(".") && !known.matches($0) && !blocklist.blocks($0) && !$0.hasSuffix(".arpa") }.sorted()
             let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
             let file = Paths.learned + "/\(id)-\(stamp).txt"
             try? Data((lines.joined(separator: "\n") + "\n").utf8).write(to: URL(fileURLWithPath: file))

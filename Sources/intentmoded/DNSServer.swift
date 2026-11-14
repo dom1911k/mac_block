@@ -244,6 +244,19 @@ final class DNSServer {
         if q.qtype == DNSMessage.typeHTTPS || q.qtype == DNSMessage.typeSVCB {
             return DNSMessage.makeResponse(query: query, question: q, rcode: DNSMessage.rcodeNoError)
         }
+        // SafeSearch: answer with the addresses of the engine's "safe" hostname.
+        if policy.safeSearch, let safe = SafeSearch.target(for: q.name) {
+            guard q.qtype == DNSMessage.typeA || q.qtype == DNSMessage.typeAAAA else {
+                return DNSMessage.makeResponse(query: query, question: q, rcode: DNSMessage.rcodeNoError)
+            }
+            let sub = DNSMessage.makeQuery(id: UInt16.random(in: 1...0xFFFE), name: safe, qtype: q.qtype)
+            guard let r = Upstream.query(sub, servers: upstream) else {
+                return DNSMessage.makeResponse(query: query, question: q, rcode: DNSMessage.rcodeServFail)
+            }
+            let addrs = DNSMessage.addresses(in: r)
+            if !addrs.isEmpty { pf.allow(addrs, generation: policy.generation) }
+            return DNSMessage.makeAnswer(query: query, question: q, records: DNSMessage.addressRecords(in: r))
+        }
         guard let reply = Upstream.query(query, servers: upstream) else {
             return DNSMessage.makeResponse(query: query, question: q, rcode: DNSMessage.rcodeServFail)
         }

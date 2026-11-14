@@ -141,10 +141,13 @@ struct IntentEntry: View {
             Text("\(mode.name) · \(mode.minutes) minutes")
                 .font(.system(size: 22, weight: .medium)).foregroundColor(.white)
             Text(mode.startDelaySeconds > 0
-                 ? "Type exactly what you're going to look for — at least \(minWords) words. After Start there's a \(mode.startDelaySeconds)-second pause. Pasting is turned off."
-                 : "Type exactly what you're going to do — at least \(minWords) words. Pasting is turned off.")
+                 ? "Type exactly what you're going to look for — at least \(minWords) words, then press Return. After that there's a \(mode.startDelaySeconds)-second pause. Pasting is turned off."
+                 : "Type exactly what you're going to do — at least \(minWords) words, then press Return. Pasting is turned off.")
                 .font(.system(size: 14)).foregroundColor(.white.opacity(0.7))
-            NoPasteTextEditor(text: $model.intentText)
+            NoPasteTextEditor(text: $model.intentText, onSubmit: {
+                if TextUtil.wordCount(model.intentText) >= minWords && !model.busy { model.startSession() }
+                else { NSSound.beep() }
+            })
                 .frame(height: 130)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             HStack {
@@ -299,7 +302,10 @@ struct ExtensionControls: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Why do you need \(st?.extensionMinutes ?? 10) more minutes? (\(st?.extensionMinReasonWords ?? 5)+ words)")
                     .font(.system(size: 11))
-                NoPasteTextEditor(text: $model.extensionReason, fontSize: 12)
+                NoPasteTextEditor(text: $model.extensionReason, fontSize: 12, onSubmit: {
+                    if TextUtil.wordCount(model.extensionReason) >= (st?.extensionMinReasonWords ?? 5) && !model.busy { model.confirmExtension() }
+                    else { NSSound.beep() }
+                })
                     .frame(height: 54)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 HStack {

@@ -207,7 +207,24 @@ State (usage, running session, logs) is kept.
 `intentmode update rollback` goes back to the previous known-good version instantly. `intentmode update list`
 shows what's installed. Phases 1–3 apply updates immediately; Phase 4 adds the 24-hour delay.
 
+## Adult content filter
+
+Applies in **every** mode, including Research and learn:
+
+1. **Big public lists**: OISD NSFW and HaGeZi NSFW (about 500,000 domains), bundled and refreshed weekly while a
+   session can reach them. Refreshes only ever add entries.
+2. **Your own lists**: `domain_groups.adult_extra` (manga/hentai sites the public lists miss, such as mangafire)
+   and `blocklists/custom.txt`. `domain_groups.bypass` blocks web proxies, page archives and DNS-over-HTTPS servers.
+3. **Forced SafeSearch** at the DNS level for Google, Bing, DuckDuckGo and YouTube (strict).
+4. **Cloudflare 1.1.1.3** as upstream, which filters adult and malware domains.
+5. **Chrome's adult-site filter** (`SafeSitesFilterBehavior`), once the Chrome profile is installed.
+
+Wrongly blocked site? Add its exact name to `blocklist_exceptions`.
+
 ## Known leaks and limits
+
+* **Filtering works per site, not per page.** A general site that hosts some adult pages (a big image host or a
+  forum) can only be blocked completely or not at all. That's why manga aggregators are blocked entirely.
 
 * **Shared CDN IPs (accepted).** If a blocked site shares an IP with an allowed one (Cloudflare, Google front
   ends), a program that connects by IP or fakes DNS can reach it. Chrome started with `--host-resolver-rules` or

@@ -96,6 +96,44 @@ public enum DNSMessage {
         return b
     }
 
+    public struct Record { public let type: UInt16; public let ttl: UInt32; public let rdata: [UInt8] }
+
+    /// Raw A/AAAA records from a response's answer section (for re-answering under another name).
+    public static func addressRecords(in b: [UInt8]) -> [Record] {
+        guard b.count >= 12 else { return [] }
+        let qd = Int(u16(b, 4)), an = Int(u16(b, 6))
+        var o = 12
+        for _ in 0..<qd {
+            guard let (_, n) = readName(b, at: o), n + 4 <= b.count else { return [] }
+            o = n + 4
+        }
+        var out: [Record] = []
+        for _ in 0..<an {
+            guard let (_, n) = readName(b, at: o), n + 10 <= b.count else { break }
+            let type = u16(b, n), ttl = u32(b, n + 4), rdlen = Int(u16(b, n + 8)), rd = n + 10
+            guard rd + rdlen <= b.count else { break }
+            if (type == typeA && rdlen == 4) || (type == typeAAAA && rdlen == 16) {
+                out.append(Record(type: type, ttl: ttl, rdata: Array(b[rd..<(rd + rdlen)])))
+            }
+            o = rd + rdlen
+        }
+        return out
+    }
+
+    /// A NOERROR reply to `query` whose answers are `records`, all under the question's name.
+    public static func makeAnswer(query: [UInt8], question: DNSQuestion, records: [Record]) -> [UInt8] {
+        var r = makeResponse(query: query, question: question, rcode: rcodeNoError)
+        let count = min(records.count, 255)
+        r[6] = 0; r[7] = UInt8(count)
+        for rec in records.prefix(count) {
+            r += [0xC0, 0x0C]                                        // name: pointer to the question
+            r += [UInt8(rec.type >> 8), UInt8(rec.type & 0xFF), 0, 1] // type, class IN
+            r += [UInt8(rec.ttl >> 24), UInt8((rec.ttl >> 16) & 0xFF), UInt8((rec.ttl >> 8) & 0xFF), UInt8(rec.ttl & 0xFF)]
+            r += [UInt8(rec.rdata.count >> 8), UInt8(rec.rdata.count & 0xFF)] + rec.rdata
+        }
+        return r
+    }
+
     public static func id(_ b: [UInt8]) -> UInt16? { b.count >= 2 ? u16(b, 0) : nil }
     public static func isResponse(_ b: [UInt8]) -> Bool { b.count >= 12 && b[2] & 0x80 != 0 }
     public static func isTruncated(_ b: [UInt8]) -> Bool { b.count >= 4 && b[2] & 0x02 != 0 }
