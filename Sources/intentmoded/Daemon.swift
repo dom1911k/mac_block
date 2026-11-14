@@ -47,6 +47,8 @@ final class Daemon {
     private var chromePolicyMissing = false
     private var statsCache: (at: Date, stats: WeekStats)?
     private var macUpdateAvailable = false
+    private var lockdown: LockdownState? = Lockdown.load()
+    private var pending: [PendingChange] = Lockdown.loadPending()
     private var macUpdateName: String?
     private var timer: DispatchSourceTimer?
 
@@ -169,7 +171,8 @@ final class Daemon {
         // Tell intentguard we're healthy once everything has been up for a few seconds.
         queue.asyncAfter(deadline: .now() + 5) { [weak self] in
             try? FileUtil.writeAtomically(Data(BuildInfo.version.utf8), to: Paths.health, mode: 0o644)
-            self?.updater.prune()
+            guard let self else { return }
+            self.updater.prune(alsoKeep: self.pending.compactMap { $0.version })   // already on the daemon queue
         }
     }
 
@@ -220,6 +223,7 @@ final class Daemon {
                 pendingStart = nil
             }
         }
+        if tickCount % 5 == 2 { lockdownTick() }
         if tickCount % 5 == 0 {
             reloadConfigIfChanged()
             pf.watchdog()
@@ -312,12 +316,24 @@ final class Daemon {
         apps.setPolicy(AppPolicy(apps: p.apps, generation: generation, label: policyLabel)) // setPolicy re-checks every app
     }
 
-    private func reloadConfigIfChanged(force: Bool = false) {
+    private func reloadConfigIfChanged(force: Bool = false, trusted: Bool = false) {
         let m = FileUtil.mtime(Paths.config)
         guard force || m != configMTime else { return }
         configMTime = m
         do {
             let c = try IntentConfig.load(path: Paths.config)
+            // During lock-down, a direct edit of config.json that loosens anything is undone.
+            if lockdown != nil && !trusted {
+                let diff = ConfigDiff.classify(old: config, new: c)
+                if !diff.isTightening || !diff.rejected.isEmpty {
+                    Log.warn("lock-down: direct config edit loosens (\(diff.loosening.joined(separator: ", "))) — restoring the previous config")
+                    try? FileManager.default.removeItem(atPath: Paths.config)
+                    try? FileManager.default.copyItem(atPath: Paths.configLastGood, toPath: Paths.config)
+                    configMTime = FileUtil.mtime(Paths.config)
+                    notice = "A direct edit of config.json was undone (lock-down). Use “Edit Settings” instead."
+                    return
+                }
+            }
             config = c
             notice = nil
             blocklist = Self.loadBlocklist(c)
@@ -416,6 +432,7 @@ final class Daemon {
             reloadConfigIfChanged(force: true)
             return notice == nil ? .success("Config reloaded.") : .fail(notice!)
         case "learn_start":
+            guard lockdown == nil else { return .fail("learn is off during lock-down.") }
             guard BuildInfo.isDevBuild else { return .fail("learn is only available in dev builds.") }
             guard uid == 0 else { return .fail("Run this with sudo.") }
             return startLearn(modeId: r.mode ?? "")
@@ -423,8 +440,61 @@ final class Daemon {
             guard BuildInfo.isDevBuild else { return .fail("learn is only available in dev builds.") }
             guard uid == 0 else { return .fail("Run this with sudo.") }
             return stopLearn(apply: r.apply ?? false)
+        case "lockdown_enable":
+            return lockdownEnable(r, uid: uid)
+        case "lockdown_disable_request":
+            guard var l = lockdown else { return .fail("Lock-down is not on.") }
+            guard l.escapeAvailable else { return .fail("The one-time turn-off is no longer available.") }
+            guard l.disableRequestedAt == nil else { return .fail("Turn-off is already requested.") }
+            l.disableRequestedAt = Date().timeIntervalSince1970
+            lockdown = l; Lockdown.save(l)
+            Log.warn("lock-down turn-off requested (takes effect in \(config.disableDelayHours) h)")
+            SessionLog.write(["event": "lockdown_disable_requested"])
+            return .success("Lock-down turns off in \(Self.hours(config.disableDelayHours)). You can cancel until then.")
+        case "lockdown_disable_cancel":
+            guard var l = lockdown, l.disableRequestedAt != nil else { return .fail("No turn-off is pending.") }
+            l.disableRequestedAt = nil
+            lockdown = l; Lockdown.save(l)
+            Log.info("lock-down turn-off cancelled")
+            SessionLog.write(["event": "lockdown_disable_cancelled"])
+            return .success("Cancelled. Lock-down stays on.")
+        case "lockdown_keep":
+            guard var l = lockdown, l.escapeAvailable else { return .fail("Nothing to confirm.") }
+            guard (r.reason ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == Lockdown.keepPhrase else {
+                return .fail("Type exactly: \(Lockdown.keepPhrase)")
+            }
+            l.escapeAvailable = false
+            l.disableRequestedAt = nil
+            lockdown = l; Lockdown.save(l)
+            Lockdown.markEscapeUsed()
+            Log.warn("lock-down confirmed for good: the one-time turn-off is gone")
+            SessionLog.write(["event": "lockdown_kept"])
+            return .success("Confirmed. The turn-off option is gone for good.")
+        case "config_propose":
+            return configPropose(path: r.path ?? "")
+        case "pending_cancel":
+            guard let i = pending.firstIndex(where: { $0.id == r.noteId }) else { return .fail("Not found.") }
+            let p = pending.remove(at: i)
+            Lockdown.savePending(pending)
+            if let f = p.file { try? FileManager.default.removeItem(atPath: f) }
+            if let v = p.version, v != BuildInfo.version { try? FileManager.default.removeItem(atPath: Paths.versions + "/" + v) }
+            Log.info("pending change cancelled: \(p.description)")
+            SessionLog.write(["event": "pending_cancelled", "kind": p.kind, "description": p.description])
+            return .success("Cancelled.")
         case "update_propose":
             guard let p = r.path else { return .fail("missing path") }
+            if lockdown != nil {
+                do {
+                    let (v, changelog) = try updater.stage(path: p)
+                    let due = Date().addingTimeInterval(config.looseningDelayHours * 3600)
+                    pending.removeAll { $0.kind == "update" && $0.version == v }
+                    pending.append(PendingChange(id: UUID().uuidString, kind: "update", description: "Update to \(v)",
+                                                 dueAt: due.timeIntervalSince1970, version: v, changelog: changelog))
+                    Lockdown.savePending(pending)
+                    SessionLog.write(["event": "update_proposed", "to": v])
+                    return .success("Update \(v) is checked and waiting. It installs in \(Self.hours(config.looseningDelayHours)) (lock-down). Cancel it on the lock screen if you change your mind.")
+                } catch { return .fail("\(error)") }
+            }
             do {
                 let msg = try updater.propose(path: p)
                 restartSoon()
@@ -516,6 +586,16 @@ final class Daemon {
         st.notes = pstate.notes ?? []
         st.chromePolicyMissing = chromePolicyMissing
         st.macUpdateAvailable = macUpdateAvailable
+        if let l = lockdown {
+            st.lockdownActive = true
+            st.lockdownEscapeAvailable = l.escapeAvailable
+            st.lockdownDisableHours = config.disableDelayHours
+            if let req = l.disableRequestedAt {
+                st.lockdownDisableIn = max(0, Int(req + config.disableDelayHours * 3600 - Date().timeIntervalSince1970))
+            }
+        }
+        st.pending = pending.map { PendingItem(id: $0.id, kind: $0.kind, description: $0.description,
+                                               dueIn: max(0, Int($0.dueAt - Date().timeIntervalSince1970))) }
         st.macUpdateName = macUpdateName
         st.escapeReasonMinWords = config.escapeReasonMinWords
         if let e = escape {
@@ -601,6 +681,102 @@ final class Daemon {
             return r
         }
         return beginSession(mode: mode, intent: text, uid: uid)
+    }
+
+    // MARK: lock-down (Phase 4)
+
+    static func hours(_ h: Double) -> String { h >= 1 ? "\(Int(h.rounded())) hours" : "\(Int((h * 60).rounded())) minutes" }
+
+    private func lockdownEnable(_ r: IPCRequest, uid: uid_t) -> IPCResponse {
+        guard uid == 0 else { return .fail("Run this with sudo (it's the last time you'll need it).") }
+        guard testEndsAt == nil else { return .fail("Lock-down needs the permanent install, not the test.") }
+        guard lockdown == nil else { return .fail("Lock-down is already on.") }
+        guard let user = r.username ?? consoleUID().flatMap(userName), user != "root" else { return .fail("Couldn't tell which account to lock down.") }
+        if let err = Lockdown.installSudoersRule(user: user) { return .fail("Couldn't block sudo: \(err)") }
+        let l = LockdownState(enabledAt: Date().timeIntervalSince1970, user: user, escapeAvailable: !Lockdown.escapeWasUsed, disableRequestedAt: nil)
+        lockdown = l
+        Lockdown.save(l)
+        Log.warn("LOCK-DOWN ON for '\(user)' (one-time turn-off available: \(l.escapeAvailable))")
+        SessionLog.write(["event": "lockdown_enabled", "user": user])
+        return .success("Lock-down is on. sudo is blocked for \(user); loosening changes now wait \(Self.hours(config.looseningDelayHours)).")
+    }
+
+    private func lockdownDisable(reason: String) {
+        guard let l = lockdown else { return }
+        Lockdown.removeSudoersRule()
+        Lockdown.markEscapeUsed()
+        lockdown = nil
+        Lockdown.save(nil)
+        Log.warn("LOCK-DOWN OFF for '\(l.user)' (\(reason)); the one-time turn-off is now used up")
+        SessionLog.write(["event": "lockdown_disabled", "reason": reason])
+        notice = "Lock-down is off. sudo works again; you can uninstall or keep using Intent Mode without lock-down."
+    }
+
+    /// Every 5 s: keep the sudo rule in place, finish a requested turn-off, apply due pending changes.
+    private func lockdownTick() {
+        let now = Date().timeIntervalSince1970
+        if let l = lockdown {
+            if !FileManager.default.fileExists(atPath: Lockdown.sudoersPath) {
+                Log.warn("lock-down: sudo rule was removed — restoring it")
+                _ = Lockdown.installSudoersRule(user: l.user)
+            }
+            if let req = l.disableRequestedAt, now >= req + config.disableDelayHours * 3600 {
+                lockdownDisable(reason: "requested turn-off took effect")
+            }
+        }
+        guard let due = pending.first(where: { $0.dueAt <= now }) else { return }
+        pending.removeAll { $0.id == due.id }
+        Lockdown.savePending(pending)
+        switch due.kind {
+        case "config":
+            guard let f = due.file, let data = try? Data(contentsOf: URL(fileURLWithPath: f)) else { return }
+            defer { try? FileManager.default.removeItem(atPath: f) }
+            if let base = due.baseHash, base != Lockdown.sha(Paths.config) {
+                Log.warn("pending config change dropped: config.json changed since it was proposed")
+                notice = "A pending settings change was dropped because the settings changed in between. Propose it again."
+                return
+            }
+            applyConfig(data, note: "pending change applied")
+        case "update":
+            guard let v = due.version else { return }
+            do {
+                _ = try updater.activate(version: v, changelog: due.changelog ?? "")
+                restartSoon()
+            } catch { Log.error("pending update \(v) failed: \(error)") }
+        default: break
+        }
+    }
+
+    private func applyConfig(_ data: Data, note: String) {
+        try? FileManager.default.copyItem(atPath: Paths.config, toPath: Paths.config + ".bak-\(Int(Date().timeIntervalSince1970))")
+        do { try FileUtil.writeAtomically(data, to: Paths.config, mode: 0o644) } catch { Log.error("could not write config: \(error)"); return }
+        reloadConfigIfChanged(force: true, trusted: true)
+        Log.info("config: \(note)")
+        SessionLog.write(["event": "config_applied", "note": note])
+    }
+
+    private func configPropose(path: String) -> IPCResponse {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return .fail("Can't read \(path).") }
+        let new: IntentConfig
+        do { new = try IntentConfig.parse(data) } catch { return .fail("\(error)") }
+        let diff = ConfigDiff.classify(old: config, new: new)
+        if !diff.rejected.isEmpty { return .fail("Not allowed: " + diff.rejected.joined(separator: "; ")) }
+        guard diff.changed else { return .success("Nothing changed.") }
+        if lockdown == nil || diff.isTightening {
+            applyConfig(data, note: diff.isTightening ? "tightening change applied" : "change applied (no lock-down)")
+            return .success(diff.isTightening ? "Applied (tightening applies at once)." : "Applied.")
+        }
+        try? FileManager.default.createDirectory(atPath: Lockdown.pendingDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let id = UUID().uuidString
+        let file = Lockdown.pendingDir + "/\(id).json"
+        do { try FileUtil.writeAtomically(data, to: file, mode: 0o600) } catch { return .fail("\(error)") }
+        let desc = "Settings: " + diff.loosening.prefix(3).joined(separator: ", ") + (diff.loosening.count > 3 ? " …" : "")
+        pending.append(PendingChange(id: id, kind: "config", description: desc,
+                                     dueAt: Date().addingTimeInterval(config.looseningDelayHours * 3600).timeIntervalSince1970,
+                                     file: file, baseHash: Lockdown.sha(Paths.config)))
+        Lockdown.savePending(pending)
+        SessionLog.write(["event": "config_proposed", "loosening": diff.loosening])
+        return IPCResponse(ok: true, message: "This loosens: \(diff.loosening.joined(separator: "; ")). It applies in \(Self.hours(config.looseningDelayHours)) — cancel it on the lock screen if you change your mind.")
     }
 
     // MARK: open session (escape hatch)
@@ -813,6 +989,9 @@ final class Daemon {
     }
 
     private func emergencyOff(_ r: IPCRequest, uid: uid_t) -> IPCResponse {
+        if lockdown != nil && uid != 0 {
+            return .fail("Emergency off is disabled during lock-down.")
+        }
         if testEndsAt != nil {
             Log.warn("test stopped from the intent screen (uid \(uid))")
             return stopTest()

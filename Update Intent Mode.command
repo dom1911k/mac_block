@@ -83,9 +83,9 @@ rm -f "$LOG"
 echo "  Installing the update…"
 if intentmode update propose "build/IntentMode-$NEW.tar.gz"; then
   echo
-  echo "  ✅ Updated to $NEW. The intent screen restarts by itself in a few seconds."
-  echo "     If the new version has a problem, it switches back to $CUR automatically,"
-  echo "     or run:  intentmode update rollback"
+  echo "  ✅ Done (see the message above). If lock-down is on, the update installs after 24 hours"
+  echo "     and shows as pending on the lock screen. If a new version has a problem, it switches"
+  echo "     back automatically, or run:  intentmode update rollback"
 else
   echo
   echo "  ❌ The update was refused (see the message above). Nothing was changed."

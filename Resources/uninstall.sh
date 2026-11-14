@@ -57,6 +57,7 @@ cp "$BASE/emergency-off.log" "$LOGS"/ 2>/dev/null
 
 rm -f /Library/LaunchDaemons/com.intentmode.daemon.plist /Library/LaunchAgents/com.intentmode.screen.plist
 rm -f /Library/LaunchDaemons/com.intentmode.testcleanup.plist
+rm -f /etc/sudoers.d/zz-intentmode-lockdown   # lock-down's sudo rule
 # Clear the "disabled" flags emergency-off left behind, so a later install starts normally.
 launchctl enable system/com.intentmode.daemon 2>/dev/null
 UID_C="$(stat -f %u /dev/console)"

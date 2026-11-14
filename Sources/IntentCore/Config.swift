@@ -239,6 +239,10 @@ public struct IntentConfig: Codable {
     public var escapeWaitMinutes: Int = 10
     /// Times when the open session can't be started at all (empty by default).
     public var quietHours: [ScheduleWindow] = []
+    /// Lock-down: how long loosening changes (config, updates) wait. Can be raised, never lowered.
+    public var looseningDelayHours: Double = 24
+    /// Lock-down: how long the one-time "turn off lock-down" takes. Can be raised, never lowered.
+    public var disableDelayHours: Double = 24
     public var systemPathPrefixes: [String] = ["/System/Library/", "/Library/Apple/", "/usr/libexec/", "/usr/sbin/", "/usr/bin/"]
     public var alwaysAllowedBundleIds: [String] = []
     public var neverAllowedBundleIds: [String] = ["com.apple.Safari"]
@@ -275,6 +279,8 @@ public struct IntentConfig: Codable {
         case escapeChallengeLength = "escape_challenge_length"
         case escapeWaitMinutes = "escape_wait_minutes"
         case quietHours = "quiet_hours"
+        case looseningDelayHours = "loosening_delay_hours"
+        case disableDelayHours = "disable_delay_hours"
         case systemPathPrefixes = "system_path_prefixes"
         case alwaysAllowedBundleIds = "always_allowed_bundle_ids"
         case neverAllowedBundleIds = "never_allowed_bundle_ids"
@@ -317,6 +323,8 @@ public struct IntentConfig: Codable {
         escapeChallengeLength = try v(.escapeChallengeLength, d.escapeChallengeLength)
         escapeWaitMinutes = try v(.escapeWaitMinutes, d.escapeWaitMinutes)
         quietHours = try v(.quietHours, d.quietHours)
+        looseningDelayHours = try v(.looseningDelayHours, d.looseningDelayHours)
+        disableDelayHours = try v(.disableDelayHours, d.disableDelayHours)
         systemPathPrefixes = try v(.systemPathPrefixes, d.systemPathPrefixes)
         alwaysAllowedBundleIds = try v(.alwaysAllowedBundleIds, d.alwaysAllowedBundleIds)
         neverAllowedBundleIds = try v(.neverAllowedBundleIds, d.neverAllowedBundleIds)
@@ -409,6 +417,7 @@ public struct IntentConfig: Codable {
             }
         }
         for w in quietHours where !w.isValid { errs.append("quiet_hours: window \(w.days) \(w.start)–\(w.end) is not valid") }
+        if looseningDelayHours < 0 || disableDelayHours < 0 { errs.append("delays must not be negative") }
         if escapeChallengeLength < 10 || escapeChallengeLength > 1000 { errs.append("escape_challenge_length must be 10–1000") }
         var ids = Set<String>()
         for m in modes {

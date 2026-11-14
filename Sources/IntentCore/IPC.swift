@@ -32,6 +32,17 @@ public struct IPCRequest: Codable {
     }
 }
 
+/// A loosening change waiting for its delay (config change or update).
+public struct PendingItem: Codable, Identifiable {
+    public var id: String
+    public var kind: String          // "config" or "update"
+    public var description: String
+    public var dueIn: Int
+    public init(id: String, kind: String, description: String, dueIn: Int) {
+        self.id = id; self.kind = kind; self.description = description; self.dueIn = dueIn
+    }
+}
+
 public struct NoteItem: Codable, Identifiable, Equatable {
     public var id: String
     public var text: String
@@ -114,6 +125,14 @@ public struct DaemonStatus: Codable {
     public var todaySessions: Int = 0
     /// macOS reports a recommended software update (read from the system's own update check).
     public var macUpdateAvailable: Bool = false
+    /// Lock-down (Phase 4).
+    public var lockdownActive: Bool = false
+    /// The one-time 24 h escape is still available.
+    public var lockdownEscapeAvailable: Bool = false
+    /// Seconds until a requested turn-off happens.
+    public var lockdownDisableIn: Int?
+    public var lockdownDisableHours: Double = 24
+    public var pending: [PendingItem] = []
     public var macUpdateName: String?
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,

@@ -13,7 +13,8 @@ import IntentCore
 final class Updater {
     struct UpdateError: Error, CustomStringConvertible { let description: String }
 
-    func propose(path rawPath: String) throws -> String {
+    /// Checks a build and installs it next to the others (versions/<v>) without switching to it.
+    func stage(path rawPath: String) throws -> (version: String, changelog: String) {
         let fm = FileManager.default
         let src = (rawPath as NSString).expandingTildeInPath
         guard fm.fileExists(atPath: src) else { throw UpdateError(description: "not found: \(src)") }
@@ -60,6 +61,14 @@ final class Updater {
         let dest = Paths.versions + "/" + v
         if fm.fileExists(atPath: dest) { try fm.removeItem(atPath: dest) }
         try fm.moveItem(atPath: pkg, toPath: dest)
+        return (v, manifest.changelog)
+    }
+
+    /// Switches to an already staged version. The caller restarts the daemon afterwards.
+    func activate(version v: String, changelog: String) throws -> String {
+        guard FileManager.default.fileExists(atPath: Paths.versions + "/" + v + "/bin/intentmoded") else {
+            throw UpdateError(description: "version \(v) is not staged")
+        }
         var st = UpdateState.load() ?? UpdateState(current: BuildInfo.version, knownGood: [BuildInfo.version])
         st.previous = BuildInfo.version
         st.current = v
@@ -67,9 +76,14 @@ final class Updater {
         st.pendingSince = Date().timeIntervalSince1970
         try st.save()
         try UpdateState.pointCurrent(to: v)
-        Log.info("update \(BuildInfo.version) → \(v) applied; restarting. Changelog: \(manifest.changelog)")
+        Log.info("update \(BuildInfo.version) → \(v) applied; restarting. Changelog: \(changelog)")
         SessionLog.write(["event": "update_applied", "from": BuildInfo.version, "to": v])
-        return "Installed \(v). The daemon and intent screen restart now. If \(v) fails to start within 2 minutes, \(BuildInfo.version) comes back automatically.\nChangelog: \(manifest.changelog)"
+        return "Installed \(v). The daemon and intent screen restart now. If \(v) fails to start within 2 minutes, \(BuildInfo.version) comes back automatically.\nChangelog: \(changelog)"
+    }
+
+    func propose(path: String) throws -> String {
+        let (v, changelog) = try stage(path: path)
+        return try activate(version: v, changelog: changelog)
     }
 
     func rollback() throws -> String {
@@ -106,9 +120,9 @@ final class Updater {
     }
 
     /// Keeps the running version, any pending one, and the 3 most recent known-good versions.
-    func prune() {
+    func prune(alsoKeep: [String] = []) {
         guard let st = UpdateState.load() else { return }
-        var keep = Set(st.knownGood.suffix(3))
+        var keep = Set(st.knownGood.suffix(3)).union(alsoKeep)
         keep.insert(BuildInfo.version)
         keep.insert(st.current)
         if let p = st.pending { keep.insert(p) }

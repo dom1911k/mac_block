@@ -5,7 +5,10 @@ clear
 echo
 echo "  Stop Intent Mode"
 echo "  ────────────────"
-if [ ! -f "$BASE/uninstall.sh" ]; then
+if [ -f "$BASE/lockdown.json" ]; then
+  echo "  Lock-down is on, so Intent Mode can't be removed from here."
+  echo "  Use \"Turn off (one-time, 24 h)\" on the lock screen if it's still available."
+elif [ ! -f "$BASE/uninstall.sh" ]; then
   echo "  Intent Mode isn't installed. Nothing to do."
   if [ -f /Library/LaunchDaemons/com.intentmode.testcleanup.plist ]; then
     sudo rm -f /Library/LaunchDaemons/com.intentmode.testcleanup.plist

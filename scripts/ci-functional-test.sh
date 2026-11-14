@@ -40,6 +40,8 @@ c["locked_allowed_domains"] += ["github.com", "githubusercontent.com", "githubas
 c["idle_end_minutes"] = 0   # nobody touches the CI Mac's keyboard
 c["bedtime"] = None        # CI runs in UTC at any hour (null = bedtime off)
 c["escape_wait_minutes"] = 0
+c["loosening_delay_hours"] = 0.01   # 36 s instead of 24 h, so CI can watch changes apply
+c["disable_delay_hours"] = 0.01
 for m in c["modes"]:
     if m["id"] == "research":
         m["start_delay_seconds"] = 3   # keep CI quick
@@ -184,6 +186,67 @@ check  "weekly overview counts the sessions"       python3 /tmp/im_escape.py wee
 check  "lock screen shows today's usage"           bash -c "intentmode status >/dev/null"
 
 check  "config upgrader keeps a disabled bedtime off" bash -c "! intentmode status | grep -q Bedtime && ! grep -q 'added setting .bedtime' '$BASE/daemon.log'"
+
+echo "== Lock-down (Phase 4, for a dummy account so this runner keeps sudo) =="
+cat > /tmp/im_ld.py <<'PY'
+import json, socket, sys
+def call(req):
+    s = socket.socket(socket.AF_UNIX); s.connect("/var/run/intentmode.sock")
+    s.sendall((json.dumps(req) + "\n").encode()); data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(65536)
+        if not chunk: break
+        data += chunk
+    return json.loads(data)
+what = sys.argv[1]
+if what == "emergency":
+    sys.exit(0 if not call({"cmd": "emergency_off", "username": "x", "password": "y"})["ok"] else 1)
+st = call({"cmd": "status"})["status"]
+if what == "pending":   print(len(st["pending"])); sys.exit(0)
+if what == "minutes":   print([m["minutes"] for m in st["modes"] if m["id"] == sys.argv[2]][0]); sys.exit(0)
+if what == "active":    sys.exit(0 if st["lockdownActive"] else 1)
+if what == "escape":    sys.exit(0 if st["lockdownEscapeAvailable"] else 1)
+PY
+edit_cfg() {  # edit_cfg <python expression on c> → writes ~/im-test-settings.json
+  python3 - "$1" <<'PY'
+import json, os, sys
+c = json.load(open("/Library/Application Support/IntentMode/config.json"))
+exec(sys.argv[1])
+json.dump(c, open(os.path.expanduser("~/im-test-settings.json"), "w"), indent=2)
+PY
+}
+check  "lock-down turns on"                         sudo intentmode lockdown enable --user imtest --yes
+check  "sudo rule installed and valid"              bash -c "sudo test -f /etc/sudoers.d/zz-intentmode-lockdown && sudo visudo -c"
+check  "status says lock-down is on"                python3 /tmp/im_ld.py active
+check  "one-time turn-off is available"             python3 /tmp/im_ld.py escape
+check  "emergency off is refused"                   python3 /tmp/im_ld.py emergency
+refuse "learn is refused"                           sudo intentmode learn start journal
+edit_cfg 'next(m for m in c["modes"] if m["id"]=="journal")["minutes"]=15'
+check  "tightening applies at once"                 intentmode config propose ~/im-test-settings.json
+check  "journal is now 15 min"                      test "$(python3 /tmp/im_ld.py minutes journal)" = 15
+edit_cfg 'next(m for m in c["modes"] if m["id"]=="journal")["minutes"]=25'
+check  "loosening is accepted as pending"           intentmode config propose ~/im-test-settings.json
+check  "…and is pending, not applied"               test "$(python3 /tmp/im_ld.py minutes journal)" = 15
+check  "…shows on the pending list"                 test "$(python3 /tmp/im_ld.py pending)" = 1
+edit_cfg 'c["loosening_delay_hours"]=0.001'
+refuse "lowering a delay is refused"                intentmode config propose ~/im-test-settings.json
+sudo python3 - <<'PY'
+import json
+p = "/Library/Application Support/IntentMode/config.json"
+c = json.load(open(p)); next(m for m in c["modes"] if m["id"] == "journal")["domains"].append("reddit.com")
+json.dump(c, open(p, "w"), indent=2)
+PY
+sleep 7
+check  "a direct loosening edit is undone"          python3 -c "import json,sys; c=json.load(open('/Library/Application Support/IntentMode/config.json')); sys.exit(0 if 'reddit.com' not in next(m for m in c['modes'] if m['id']=='journal')['domains'] else 1)"
+check  "turn-off can be requested"                  intentmode lockdown disable
+echo "  (waiting for the 36-second delays…)"
+sleep 45
+check  "the pending loosening applied after its delay" test "$(python3 /tmp/im_ld.py minutes journal)" = 25
+refuse "lock-down turned off after its delay"       python3 /tmp/im_ld.py active
+check  "sudo rule removed"                          bash -c "! sudo test -f /etc/sudoers.d/zz-intentmode-lockdown"
+check  "lock-down can be turned on again"           sudo intentmode lockdown enable --user imtest --yes
+refuse "…but the one-time turn-off is used up"      python3 /tmp/im_ld.py escape
+refuse "…so it can't be requested again"            intentmode lockdown disable
 
 echo "== Uninstall restores everything =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1

@@ -19,6 +19,12 @@ Updates:
   intentmode update rollback              Go back to the previous known-good version (instant)
   intentmode update list                  Show installed versions
 
+Settings and lock-down:
+  intentmode config edit                  Edit the settings in TextEdit; loosening changes wait 24 h in lock-down
+  intentmode pending [cancel <id>]        Show / cancel changes that are waiting
+  sudo intentmode lockdown enable         Turn on lock-down (Phase 4)
+  intentmode lockdown status | disable | cancel | keep
+
 Admin (sudo):
   sudo intentmode reload                  Reload config.json now (it also reloads by itself within 5 s)
   sudo intentmode learn start <mode>      Dev builds: allow everything and record visited domains
@@ -54,6 +60,15 @@ func call(_ req: IPCRequest, timeout: Int = 15) -> IPCResponse {
     for l in r.lines ?? [] { print("  \(l)") }
     if !r.ok { die("Error: \(r.error ?? "unknown error")") }
     return r
+}
+
+@discardableResult
+func run_open(_ args: [String]) -> Int32 {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    p.arguments = args
+    try? p.run(); p.waitUntilExit()
+    return p.terminationStatus
 }
 
 func formatDuration(_ s: Int) -> String { String(format: "%d:%02d", s / 60, s % 60) }
@@ -93,6 +108,79 @@ case "start":
         print("Waiting \(wait) s (press Ctrl-C to cancel)…")
         sleep(UInt32(wait))
         call(IPCRequest(cmd: "start_confirm"))
+    }
+
+case "lockdown":
+    let sub = args.count > 1 ? args[1] : "status"
+    switch sub {
+    case "enable":
+        if getuid() != 0 { die("Run this with sudo: sudo intentmode lockdown enable") }
+        let forUser = option("--user")
+        if !args.contains("--yes") {
+            print("""
+
+              LOCK-DOWN
+              ─────────
+              • sudo stops working for your account (no Terminal way to switch Intent Mode off)
+              • Emergency off and learn are disabled
+              • Loosening settings changes and updates wait 24 hours (tightening applies at once)
+              • ONE-TIME escape: "Turn off lock-down" on the lock screen takes effect after 24 hours.
+                It's gone for good once used, or once you confirm you'll keep using Intent Mode.
+
+            """)
+            print("Type LOCK DOWN to continue: ", terminator: "")
+            guard readLine() == "LOCK DOWN" else { die("Cancelled.") }
+        }
+        call(IPCRequest(cmd: "lockdown_enable", username: forUser))
+    case "status":
+        let r = call(IPCRequest(cmd: "status"))
+        guard let s = r.status else { break }
+        if !s.lockdownActive { print("Lock-down: off") } else {
+            print("Lock-down: ON")
+            if let d = s.lockdownDisableIn { print("Turning off in \(d / 3600) h \((d / 60) % 60) min") }
+            else { print("One-time turn-off: \(s.lockdownEscapeAvailable ? "available" : "gone")") }
+        }
+        for p in s.pending { print("Pending (\(p.dueIn / 3600) h \((p.dueIn / 60) % 60) min): \(p.description)   [id \(p.id)]") }
+    case "disable":
+        call(IPCRequest(cmd: "lockdown_disable_request"))
+    case "cancel":
+        call(IPCRequest(cmd: "lockdown_disable_cancel"))
+    case "keep":
+        print("This removes the one-time turn-off for good. Type exactly:\n  I will keep using Intent Mode as intended\n> ", terminator: "")
+        call(IPCRequest(cmd: "lockdown_keep", reason: readLine() ?? ""))
+    default:
+        die("usage: intentmode lockdown status | sudo intentmode lockdown enable | disable | cancel | keep")
+    }
+
+case "config":
+    let sub = args.count > 1 ? args[1] : ""
+    switch sub {
+    case "edit":
+        // Copy the live config to your home folder, open it in TextEdit, then propose it.
+        let copy = (NSHomeDirectory() as NSString).appendingPathComponent("IntentMode-settings.json")
+        do {
+            if FileManager.default.fileExists(atPath: copy) { try FileManager.default.removeItem(atPath: copy) }
+            try FileManager.default.copyItem(atPath: Paths.config, toPath: copy)
+        } catch { die("Couldn't copy the settings: \(error)") }
+        print("Opening \(copy) in TextEdit. Make your changes, save (⌘S), then come back here and press Enter.")
+        _ = run_open(["-e", copy])
+        _ = readLine()
+        call(IPCRequest(cmd: "config_propose", path: copy))
+    case "propose":
+        guard args.count >= 3 else { die("usage: intentmode config propose <file>") }
+        call(IPCRequest(cmd: "config_propose", path: URL(fileURLWithPath: args[2]).standardizedFileURL.path))
+    default:
+        die("usage: intentmode config edit | config propose <file>")
+    }
+
+case "pending":
+    if args.count >= 3 && args[1] == "cancel" {
+        call(IPCRequest(cmd: "pending_cancel", noteId: args[2]))
+    } else {
+        let r = call(IPCRequest(cmd: "status"))
+        let items = r.status?.pending ?? []
+        if items.isEmpty { print("Nothing pending.") }
+        for p in items { print("\(p.dueIn / 3600) h \((p.dueIn / 60) % 60) min — \(p.description)   (cancel: intentmode pending cancel \(p.id))") }
     }
 
 case "week":

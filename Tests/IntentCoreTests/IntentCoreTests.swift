@@ -285,6 +285,40 @@ final class ConfigUpgraderTests: XCTestCase {
     }
 }
 
+final class ConfigDiffTests: XCTestCase {
+    let base = """
+    {"domain_groups": {"g": ["=a.com"]}, "loosening_delay_hours": 24, "disable_delay_hours": 24,
+     "modes": [{"id": "claude", "name": "Claude", "apps": [{"bundle_id": "c"}], "domains": ["claude.ai", "@g"], "minutes": 10, "daily_limit": 2}]}
+    """
+    func cfg(_ edit: (inout [String: Any]) -> Void) -> IntentConfig {
+        var obj = try! JSONSerialization.jsonObject(with: Data(base.utf8)) as! [String: Any]
+        edit(&obj)
+        return try! IntentConfig.parse(try! JSONSerialization.data(withJSONObject: obj))
+    }
+    func mode(_ o: inout [String: Any], _ f: (inout [String: Any]) -> Void) {
+        var modes = o["modes"] as! [[String: Any]]; f(&modes[0]); o["modes"] = modes
+    }
+
+    func testClassification() {
+        let old = cfg { _ in }
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: old).changed)
+        // Tightening: shorter, fewer sites, lower limit
+        let tighter = cfg { o in mode(&o) { $0["minutes"] = 5; $0["domains"] = ["claude.ai"]; $0["daily_limit"] = 1 } }
+        let t = ConfigDiff.classify(old: old, new: tighter)
+        XCTAssertTrue(t.changed); XCTAssertTrue(t.isTightening, "\(t.loosening)")
+        // Loosening cases
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in mode(&o) { $0["minutes"] = 30 } }).isTightening)
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in mode(&o) { $0["domains"] = ["claude.ai", "@g", "x.com"] } }).isTightening)
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in o["domain_groups"] = ["g": ["=a.com", "=b.com"]] }).isTightening)
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in mode(&o) { $0["daily_limit"] = nil } }).isTightening)
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in o["force_safe_search"] = false }).isTightening)
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in o["learn_max_minutes"] = 99 }).isTightening)   // ambiguous
+        // Delays can only go up
+        XCTAssertFalse(ConfigDiff.classify(old: old, new: cfg { o in o["loosening_delay_hours"] = 1 }).rejected.isEmpty)
+        XCTAssertTrue(ConfigDiff.classify(old: old, new: cfg { o in o["loosening_delay_hours"] = 48 }).rejected.isEmpty)
+    }
+}
+
 final class MiscTests: XCTestCase {
     func testVersions() {
         XCTAssertTrue(VersionCompare.isNewer("0.1.1", than: "0.1.0"))

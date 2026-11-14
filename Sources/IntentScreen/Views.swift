@@ -257,6 +257,9 @@ struct Footer: View {
     var body: some View {
         VStack(spacing: 10) {
             TestBanner(model: model)
+            if model.status?.lockdownActive == true || !(model.status?.pending.isEmpty ?? true) {
+                LockdownBar(model: model)
+            }
             if model.showEmergency {
                 VStack(spacing: 8) {
                     Text("Emergency off (dev build): removes all enforcement until you turn it back on with\nsudo intentmode emergency-off --undo")
@@ -301,7 +304,8 @@ struct Footer: View {
                 if model.status?.chromePolicyMissing == true {
                     ChromeWarning(model: model)
                 }
-                if model.status?.devBuild == true && !model.showEmergency && model.status?.testEndsAt == nil {
+                if model.status?.devBuild == true && !model.showEmergency && model.status?.testEndsAt == nil
+                    && model.status?.lockdownActive != true {
                     Button("Emergency off…") { model.showEmergency = true }
                         .foregroundColor(.red.opacity(0.8))
                 }
@@ -309,6 +313,66 @@ struct Footer: View {
                     .font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
             }
         }
+    }
+}
+
+/// Lock-down status, the one-time turn-off, and changes waiting for their delay.
+struct LockdownBar: View {
+    @ObservedObject var model: AppModel
+    @State private var confirmTurnOff = false
+    @State private var showKeep = false
+    @State private var keepText = ""
+
+    private func hm(_ s: Int) -> String { "\(s / 3600) h \((s / 60) % 60) min" }
+
+    var body: some View {
+        let st = model.status
+        VStack(alignment: .leading, spacing: 6) {
+            if st?.lockdownActive == true {
+                HStack(spacing: 10) {
+                    Text("🔒 Lock-down").font(.system(size: 12, weight: .semibold))
+                    if let d = st?.lockdownDisableIn {
+                        Text("turns off in \(hm(d))").font(.system(size: 12))
+                        Button("Keep it on") { model.send(IPCRequest(cmd: "lockdown_disable_cancel")) { _ in } }.controlSize(.small)
+                    } else if st?.lockdownEscapeAvailable == true {
+                        Spacer()
+                        if confirmTurnOff {
+                            Text("Uses your one-time turn-off. Sure?").font(.system(size: 11))
+                            Button("Yes, turn off in \(Int(st?.lockdownDisableHours ?? 24)) h") {
+                                confirmTurnOff = false
+                                model.send(IPCRequest(cmd: "lockdown_disable_request")) { r in if !r.ok { model.errorText = r.error } }
+                            }.controlSize(.small)
+                            Button("No") { confirmTurnOff = false }.controlSize(.small)
+                        } else {
+                            Button("Turn off (one-time, \(Int(st?.lockdownDisableHours ?? 24)) h)…") { confirmTurnOff = true }.controlSize(.small)
+                            Button("Keep lock-down…") { showKeep.toggle() }.controlSize(.small)
+                        }
+                    }
+                }
+                if showKeep && st?.lockdownEscapeAvailable == true {
+                    HStack {
+                        TextField("Type: I will keep using Intent Mode as intended", text: $keepText)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Confirm — remove the turn-off for good") {
+                            model.send(IPCRequest(cmd: "lockdown_keep", reason: keepText)) { r in
+                                if r.ok { showKeep = false; keepText = ""; model.infoText = r.message } else { model.errorText = r.error }
+                            }
+                        }
+                        .disabled(keepText != "I will keep using Intent Mode as intended")
+                    }
+                }
+            }
+            ForEach(st?.pending ?? []) { p in
+                HStack {
+                    Text("⏳ \(p.description) — applies in \(hm(p.dueIn))").font(.system(size: 11)).lineLimit(1)
+                    Spacer()
+                    Button("Cancel") { model.send(IPCRequest(cmd: "pending_cancel", noteId: p.id)) { _ in } }.controlSize(.mini)
+                }
+            }
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
     }
 }
 

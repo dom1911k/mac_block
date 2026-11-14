@@ -99,7 +99,7 @@ Double-click **Try Intent Mode.command**. It installs Apple's developer tools if
 **Stop test now** button. Step-by-step guide: [docs/EASY-TEST.md](docs/EASY-TEST.md).
 To remove everything: double-click **Stop Intent Mode.command**.
 
-Permanent install and one-click updates: [docs/LONG-TERM.md](docs/LONG-TERM.md).
+Permanent install, one-click updates and **lock-down (Phase 4)**: [docs/LONG-TERM.md](docs/LONG-TERM.md).
 
 (The more thorough VM-based checklist is in [docs/PHASE1-TESTING.md](docs/PHASE1-TESTING.md).)
 
