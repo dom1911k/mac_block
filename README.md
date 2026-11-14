@@ -92,9 +92,16 @@ update-signing key in `~/.intentmode/signing_key`. Keep it: updates must be sign
 
 Building installs nothing. It's safe on your real Mac.
 
-## Install
+## Try it (easiest)
 
-**Test in a VM first.** See [docs/PHASE1-TESTING.md](docs/PHASE1-TESTING.md).
+Double-click **Try Intent Mode.command**. It installs Apple's developer tools if needed, builds, and starts a
+**test** on your normal Mac that switches itself off after 10–60 minutes, on restart, or with the
+**Stop test now** button. Step-by-step guide: [docs/EASY-TEST.md](docs/EASY-TEST.md).
+To remove everything: double-click **Stop Intent Mode.command**.
+
+(The more thorough VM-based checklist is in [docs/PHASE1-TESTING.md](docs/PHASE1-TESTING.md).)
+
+## Install (for real)
 
 ```bash
 sudo build/IntentMode-0.1.0/install.sh
