@@ -43,7 +43,10 @@ Just play with it. Here are good things to check:
 7. Click **End session → End now**. Chrome closes and the lock screen comes back.
 8. Start **Claude / vibe coding**: claude.ai and github.com work, youtube.com doesn't.
 9. Try to open Safari at any time. It always closes.
-10. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
+10. Start **Research**: it needs at least 12 words, then waits 30 seconds (you can cancel during the pause).
+    Afterwards any normal website works, such as a car rental or dealer site, but reddit.com and youtube.com
+    don't. Its tile shows how many you have left today and this week (2 a day, 5 a week).
+11. Click **Stop test now**. Within a few seconds everything is back to normal and websites work again.
 
 Also worth trying once: start a test and **restart the Mac** in the middle of it. After the restart Intent Mode is
 gone and the internet works.

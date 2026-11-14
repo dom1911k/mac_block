@@ -80,13 +80,19 @@ case "status":
     if let n = s.notice { print("Notice: \(n)") }
     print("\nModes today:")
     for m in s.modes {
-        let limit = m.dailyLimit.map { "\(m.usedToday)/\($0)" } ?? "\(m.usedToday)/∞"
+        var limit = m.dailyLimit.map { "\(m.usedToday)/\($0)" } ?? "\(m.usedToday)/∞"
+        if let w = m.weeklyLimit { limit += ", week \(m.usedThisWeek)/\(w)" }
         print("  \(m.id.padding(toLength: 10, withPad: " ", startingAt: 0)) \(m.name.padding(toLength: 24, withPad: " ", startingAt: 0)) \(m.minutes) min  used \(limit)\(m.available ? "" : "  — \(m.unavailableReason ?? "unavailable")")")
     }
 
 case "start":
     guard args.count >= 3 else { die("usage: intentmode start <mode> <intent…>") }
-    call(IPCRequest(cmd: "start", mode: args[1], intent: args[2...].joined(separator: " ")))
+    let r = call(IPCRequest(cmd: "start", mode: args[1], intent: args[2...].joined(separator: " ")))
+    if let wait = r.waitSeconds {
+        print("Waiting \(wait) s (press Ctrl-C to cancel)…")
+        sleep(UInt32(wait))
+        call(IPCRequest(cmd: "start_confirm"))
+    }
 
 case "end":
     call(IPCRequest(cmd: "end", reason: args.count > 1 ? args[1...].joined(separator: " ") : "ended from the command line"))

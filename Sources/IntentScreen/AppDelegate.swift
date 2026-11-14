@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         model.now = Date()
         model.poll()
+        model.checkPendingStart()
         enforceUI()
     }
 

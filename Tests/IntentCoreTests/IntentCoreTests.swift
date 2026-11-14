@@ -115,6 +115,33 @@ final class ConfigTests: XCTestCase {
         }
     }
 
+    func testOpenWebMode() throws {
+        let json = """
+        {"domain_groups": {"distraction": ["reddit.com", "youtube.com"]},
+         "modes": [{"id": "research", "name": "Research", "apps": [{"bundle_id": "com.google.Chrome"}],
+                    "open_web": true, "blocked_domains": ["@distraction"], "minutes": 15,
+                    "daily_limit": 2, "weekly_limit": 5, "intent_min_words": 12, "start_delay_seconds": 30}]}
+        """
+        let c = try IntentConfig.parse(Data(json.utf8))
+        let m = c.mode("research")!
+        XCTAssertTrue(m.isOpenWeb)
+        XCTAssertEqual(m.weeklyLimit, 5)
+        XCTAssertEqual(c.intentMinWords(for: m), 12)
+        let blocked = DomainMatcher(entries: c.blockedDomains(for: m))
+        XCTAssertTrue(blocked.matches("old.reddit.com"))
+        XCTAssertTrue(blocked.matches("www.youtube.com"))
+        XCTAssertFalse(blocked.matches("autoscout24.de"))
+
+        let bad = """
+        {"modes": [{"id": "x", "name": "x", "apps": [{"bundle_id": "a"}], "open_web": true, "domains": ["a.com"], "minutes": 5},
+                   {"id": "y", "name": "y", "apps": [{"bundle_id": "a"}], "minutes": 5}]}
+        """
+        XCTAssertThrowsError(try IntentConfig.parse(Data(bad.utf8))) { e in
+            XCTAssertTrue("\(e)".contains("doesn't use 'domains'"))
+            XCTAssertTrue("\(e)".contains("domains is empty"))
+        }
+    }
+
     func testDefaultConfigFileParses() throws {
         // Tests run from the package root.
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -122,6 +149,7 @@ final class ConfigTests: XCTestCase {
         let c = try IntentConfig.load(path: url.path)
         XCTAssertNotNil(c.mode("claude"))
         XCTAssertNotNil(c.mode("journal"))
+        XCTAssertEqual(c.mode("research")?.isOpenWeb, true)
         let anchor = PFRules.anchor(config: c, restrictUpstreamToRoot: true)
         XCTAssertTrue(anchor.contains("block return out quick all"))
         XCTAssertTrue(anchor.contains("user root"))

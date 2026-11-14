@@ -42,14 +42,51 @@ public struct ModeConfig: Codable {
     public var conditionalDomains: [ConditionalDomains]?
     public var minutes: Int
     public var dailyLimit: Int?
+    /// Sessions per week (Monday 00:00 to Sunday 23:59, local time).
+    public var weeklyLimit: Int?
     public var allowExtension: Bool?
+    /// Open web: everything is allowed except the adult blocklist and `blocked_domains`.
+    public var openWeb: Bool?
+    /// Only used with open_web: names that stay blocked (e.g. "@distraction").
+    public var blockedDomains: [String]?
+    /// Overrides the global intent_min_words for this mode.
+    public var intentMinWords: Int?
+    /// A pause between pressing Start and the session opening (can be cancelled).
+    public var startDelaySeconds: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, apps, launch, domains, minutes
+        case id, name, description, apps, launch, minutes
+        case domains
         case conditionalDomains = "conditional_domains"
         case dailyLimit = "daily_limit"
+        case weeklyLimit = "weekly_limit"
         case allowExtension = "allow_extension"
+        case openWeb = "open_web"
+        case blockedDomains = "blocked_domains"
+        case intentMinWords = "intent_min_words"
+        case startDelaySeconds = "start_delay_seconds"
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        apps = try c.decode([AppRule].self, forKey: .apps)
+        launch = try c.decodeIfPresent([LaunchItem].self, forKey: .launch)
+        domains = try c.decodeIfPresent([String].self, forKey: .domains) ?? []
+        conditionalDomains = try c.decodeIfPresent([ConditionalDomains].self, forKey: .conditionalDomains)
+        minutes = try c.decode(Int.self, forKey: .minutes)
+        dailyLimit = try c.decodeIfPresent(Int.self, forKey: .dailyLimit)
+        weeklyLimit = try c.decodeIfPresent(Int.self, forKey: .weeklyLimit)
+        allowExtension = try c.decodeIfPresent(Bool.self, forKey: .allowExtension)
+        openWeb = try c.decodeIfPresent(Bool.self, forKey: .openWeb)
+        blockedDomains = try c.decodeIfPresent([String].self, forKey: .blockedDomains)
+        intentMinWords = try c.decodeIfPresent(Int.self, forKey: .intentMinWords)
+        startDelaySeconds = try c.decodeIfPresent(Int.self, forKey: .startDelaySeconds)
+    }
+
+    public var isOpenWeb: Bool { openWeb == true }
 }
 
 public struct ConfigError: Error, CustomStringConvertible {
@@ -203,6 +240,13 @@ public struct IntentConfig: Codable {
         return expand(raw)
     }
 
+    /// Names that stay blocked in an open-web mode (expanded).
+    public func blockedDomains(for mode: ModeConfig) -> [String] {
+        expand(mode.blockedDomains ?? [])
+    }
+
+    public func intentMinWords(for mode: ModeConfig) -> Int { mode.intentMinWords ?? intentMinWords }
+
     public func validate() -> [String] {
         var errs: [String] = []
         if upstreamDns.isEmpty { errs.append("upstream_dns is empty") }
@@ -219,6 +263,14 @@ public struct IntentConfig: Codable {
             if !ids.insert(m.id).inserted { errs.append("duplicate mode id '\(m.id)'") }
             if m.minutes < 1 || m.minutes > 24 * 60 { errs.append("mode '\(m.id)': minutes must be 1–1440") }
             if let l = m.dailyLimit, l < 0 { errs.append("mode '\(m.id)': daily_limit must not be negative") }
+            if let l = m.weeklyLimit, l < 0 { errs.append("mode '\(m.id)': weekly_limit must not be negative") }
+            if let d = m.startDelaySeconds, d < 0 || d > 3600 { errs.append("mode '\(m.id)': start_delay_seconds must be 0–3600") }
+            if let w = m.intentMinWords, w < 1 { errs.append("mode '\(m.id)': intent_min_words must be at least 1") }
+            if m.isOpenWeb && !m.domains.isEmpty { errs.append("mode '\(m.id)': an open_web mode doesn't use 'domains' (use blocked_domains)") }
+            if !m.isOpenWeb && m.domains.isEmpty { errs.append("mode '\(m.id)': domains is empty (or set open_web: true)") }
+            for e in m.blockedDomains ?? [] where e.hasPrefix("@") && domainGroups[String(e.dropFirst())] == nil {
+                errs.append("mode '\(m.id)': unknown domain group '\(e)' in blocked_domains")
+            }
             if m.apps.isEmpty { errs.append("mode '\(m.id)': apps is empty") }
             for e in m.domains + (m.conditionalDomains ?? []).flatMap({ $0.domains }) {
                 if e.hasPrefix("@") && domainGroups[String(e.dropFirst())] == nil {

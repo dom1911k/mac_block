@@ -113,11 +113,28 @@ final class AppModel: ObservableObject {
             if r.ok {
                 self.intentText = ""
                 self.selectedMode = nil
-                self.launch(r.launch ?? [])
+                if r.waitSeconds == nil { self.launch(r.launch ?? []) }
+                // Otherwise the daemon pauses first; `checkPendingStart` confirms when the pause is over.
             } else {
                 self.errorText = r.error
             }
         }
+    }
+
+    private var confirming = false
+
+    /// Called on every status update: confirms a paused start once its countdown reaches 0.
+    func checkPendingStart() {
+        guard let st = status, st.pendingModeId != nil, (st.pendingReadyIn ?? 1) == 0, !confirming else { return }
+        confirming = true
+        send(IPCRequest(cmd: "start_confirm")) { r in
+            self.confirming = false
+            if r.ok { self.launch(r.launch ?? []) } else { self.errorText = r.error }
+        }
+    }
+
+    func cancelPendingStart() {
+        send(IPCRequest(cmd: "start_cancel")) { _ in }
     }
 
     func endSession() {

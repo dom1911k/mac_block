@@ -30,6 +30,9 @@ final class Daemon {
     /// Set during a test install (test-mode.json). Everything is removed when it passes.
     private let testEndsAt: Date? = TestMode.load().map { Date(timeIntervalSince1970: $0.endsAt) }
     private var testStopping = false
+    /// A start waiting out its mode's start_delay_seconds (monotonic `readyAt`).
+    private struct PendingStart { let modeId: String; let intent: String; let readyAt: TimeInterval; let uid: uid_t }
+    private var pendingStart: PendingStart?
     private var timer: DispatchSourceTimer?
 
     private let box: PolicyBox
@@ -147,7 +150,10 @@ final class Daemon {
         case .learn(_, let until):
             if now >= until { _ = stopLearn(apply: false) }
         case .locked:
-            break
+            if let p = pendingStart, ProcessInfo.processInfo.systemUptime > p.readyAt + 120 {
+                Log.info("pending start of \(p.modeId) expired (not confirmed)")
+                pendingStart = nil
+            }
         }
         if tickCount % 5 == 0 {
             reloadConfigIfChanged()
@@ -179,6 +185,13 @@ final class Daemon {
                           block: blocklist, allowAll: false, apps: [])
         case .session:
             let mode = pstate.session.flatMap { config.mode($0.modeId) }
+            if let mode, mode.isOpenWeb {
+                // Open web: everything except the adult blocklist and the mode's blocked_domains.
+                var block = blocklist
+                for e in config.blockedDomains(for: mode) { block.add(e) }
+                return Policy(kind: .session, generation: g, allow: DomainMatcher(entries: ["*"]),
+                              block: block, allowAll: true, apps: mode.apps)
+            }
             return Policy(kind: .session, generation: g, allow: DomainMatcher(entries: mode.map { config.domains(for: $0) } ?? []),
                           block: blocklist, allowAll: false, apps: mode?.apps ?? [])
         case .learn(let id, _):
@@ -265,6 +278,12 @@ final class Daemon {
             return IPCResponse(ok: true, status: status(uid: uid))
         case "start":
             return start(modeId: r.mode ?? "", intent: r.intent ?? "", uid: uid)
+        case "start_confirm":
+            return confirmStart(uid: uid)
+        case "start_cancel":
+            if let p = pendingStart { Log.info("start of \(p.modeId) cancelled during the pause") }
+            pendingStart = nil
+            return .success("Cancelled.")
         case "end":
             guard case .session = phase else { return .fail("No session is running.") }
             endSession(early: true, reason: r.reason?.isEmpty == false ? r.reason! : "ended early")
@@ -315,20 +334,36 @@ final class Daemon {
         if let limit = m.dailyLimit, used >= limit {
             return (false, limit == 0 ? "Disabled" : "Used \(used) of \(limit) today")
         }
+        if let limit = m.weeklyLimit {
+            let week = pstate.usedThisWeek(m.id)
+            if week >= limit { return (false, "Used \(week) of \(limit) this week — resets Monday") }
+        }
         return (true, nil)
     }
 
     private func status(uid: uid_t) -> DaemonStatus {
         let modes = config.modes.map { m -> ModeStatus in
             let (ok, why) = availability(m)
-            return ModeStatus(id: m.id, name: m.name, description: m.description, minutes: m.minutes,
-                              dailyLimit: m.dailyLimit, usedToday: pstate.used(m.id), available: ok, unavailableReason: why)
+            var ms = ModeStatus(id: m.id, name: m.name, description: m.description, minutes: m.minutes,
+                                dailyLimit: m.dailyLimit, usedToday: pstate.used(m.id), available: ok, unavailableReason: why)
+            ms.weeklyLimit = m.weeklyLimit
+            ms.usedThisWeek = pstate.usedThisWeek(m.id)
+            ms.openWeb = m.isOpenWeb
+            ms.intentMinWords = config.intentMinWords(for: m)
+            ms.startDelaySeconds = m.startDelaySeconds ?? 0
+            return ms
         }
         let exempt = userName(uid).map { config.exemptUsers.contains($0) } ?? false
         var st = DaemonStatus(state: "locked", version: BuildInfo.version, devBuild: BuildInfo.isDevBuild, modes: modes,
                               intentMinWords: config.intentMinWords, extensionMinReasonWords: config.extensionMinReasonWords,
                               extensionMinutes: config.extensionMinutes, exempt: exempt, notice: notice)
         st.testEndsAt = testEndsAt?.timeIntervalSince1970
+        if case .locked = phase, let p = pendingStart {
+            st.pendingModeId = p.modeId
+            st.pendingModeName = config.mode(p.modeId)?.name ?? p.modeId
+            st.pendingIntent = p.intent
+            st.pendingReadyIn = max(0, Int((p.readyAt - ProcessInfo.processInfo.systemUptime).rounded(.up)))
+        }
         switch phase {
         case .locked:
             break
@@ -370,12 +405,39 @@ final class Daemon {
         guard let mode = config.mode(modeId) else { return .fail("Unknown mode '\(modeId)'.") }
         let text = intent.trimmingCharacters(in: .whitespacesAndNewlines)
         let words = TextUtil.wordCount(text)
-        guard words >= config.intentMinWords else {
-            return .fail("Describe what you're here for in at least \(config.intentMinWords) words (you have \(words)).")
+        let minWords = config.intentMinWords(for: mode)
+        guard words >= minWords else {
+            return .fail("Describe what you're here for in at least \(minWords) words (you have \(words)).")
         }
         let (ok, why) = availability(mode)
         guard ok else { return .fail("\(mode.name) is not available: \(why ?? "")") }
 
+        if let delay = mode.startDelaySeconds, delay > 0 {
+            pendingStart = PendingStart(modeId: mode.id, intent: text,
+                                        readyAt: ProcessInfo.processInfo.systemUptime + Double(delay), uid: uid)
+            Log.info("start of \(mode.id) requested; pausing \(delay) s")
+            var r = IPCResponse(ok: true, message: "\(mode.name) opens in \(delay) seconds.")
+            r.waitSeconds = delay
+            return r
+        }
+        return beginSession(mode: mode, intent: text, uid: uid)
+    }
+
+    /// Second step of a delayed start, after the pause.
+    private func confirmStart(uid: uid_t) -> IPCResponse {
+        guard case .locked = phase else { return .fail("A session is already running.") }
+        guard let p = pendingStart else { return .fail("Nothing is waiting to start.") }
+        let left = p.readyAt - ProcessInfo.processInfo.systemUptime
+        guard left <= 0 else { return .fail("Wait \(Int(left.rounded(.up))) more seconds.") }
+        pendingStart = nil
+        guard let mode = config.mode(p.modeId) else { return .fail("Unknown mode '\(p.modeId)'.") }
+        let (ok, why) = availability(mode)
+        guard ok else { return .fail("\(mode.name) is not available: \(why ?? "")") }
+        return beginSession(mode: mode, intent: p.intent, uid: uid)
+    }
+
+    private func beginSession(mode: ModeConfig, intent text: String, uid: uid_t) -> IPCResponse {
+        pendingStart = nil
         let now = Date()
         pstate.session = SessionRecord(modeId: mode.id, intent: text, startedAt: now,
                                        endsAt: now.addingTimeInterval(Double(mode.minutes) * 60), extended: false)

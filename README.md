@@ -183,6 +183,11 @@ the 10-character developer team. To get both for an app:
 intentmode inspect-app /Applications/Claude.app
 ```
 
+**Open-web modes** (like *Research*): `"open_web": true` allows every site except the adult filter and the
+mode's `blocked_domains` (for example `"@distraction"`, the list in `domain_groups.distraction`). Such modes have more
+friction: `intent_min_words` (per mode), `start_delay_seconds` (a cancellable pause before the session opens),
+`daily_limit` and `weekly_limit` (weeks start Monday 00:00).
+
 Other keys: `intent_min_words`, `warning_seconds`, `extension_*`, `daily_limit`/`minutes` per mode,
 `flags.claude_mode_allow_google_search`, `system_path_prefixes` (which macOS components are always allowed),
 `always_allowed_bundle_ids`, `never_allowed_bundle_ids`, `chrome_forbidden_flags`, `doh_block_ips`, `exempt_users`

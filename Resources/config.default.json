@@ -1,5 +1,5 @@
 {
-  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app).",
+  "_readme": "Intent Mode config. Edit with: sudo nano '/Library/Application Support/IntentMode/config.json' — the daemon reloads it within 5 seconds (check daemon.log for errors; an invalid file is ignored and the last good one stays active). Domain entries: 'example.com' = example.com and all subdomains; '=www.example.com' = exactly that name; '@group' = everything in domain_groups.group. Apps are matched by bundle ID; team_id pins the code signature ('apple' for Apple apps; find others with: intentmode inspect-app /Applications/Foo.app). Modes with \"open_web\": true allow every site except the adult filter and their blocked_domains.",
   "always_allowed_bundle_ids": [
     "com.apple.finder"
   ],
@@ -39,6 +39,32 @@
   ],
   "domain_groups": {
     "book_domains": [],
+    "distraction": [
+      "reddit.com",
+      "redd.it",
+      "redditmedia.com",
+      "redditstatic.com",
+      "youtube.com",
+      "youtu.be",
+      "youtube-nocookie.com",
+      "googlevideo.com",
+      "ytimg.com",
+      "resetera.com",
+      "steampowered.com",
+      "steamcommunity.com",
+      "steamstatic.com",
+      "x.com",
+      "twitter.com",
+      "twimg.com",
+      "instagram.com",
+      "cdninstagram.com",
+      "tiktok.com",
+      "tiktokcdn.com",
+      "tiktokv.com",
+      "facebook.com",
+      "fbcdn.net",
+      "threads.net"
+    ],
     "google_docs": [
       "=docs.google.com",
       "=docs.googleusercontent.com",
@@ -187,32 +213,30 @@
       "name": "Get a book"
     },
     {
-      "allow_extension": true,
+      "allow_extension": false,
       "apps": [
         {
           "bundle_id": "com.google.Chrome",
           "team_id": "EQHXZ8M8AV"
         }
       ],
-      "daily_limit": 2,
-      "description": "Airbnb, Booking.com and your planning docs",
-      "domains": [
-        "airbnb.com",
-        "airbnb.de",
-        "muscache.com",
-        "booking.com",
-        "bstatic.com",
-        "@google_docs",
-        "@google_signin"
+      "blocked_domains": [
+        "@distraction"
       ],
-      "id": "travel",
+      "daily_limit": 2,
+      "description": "Open web for spontaneous searching (no distraction sites, no adult content)",
+      "id": "research",
+      "intent_min_words": 12,
       "launch": [
         {
           "bundle_id": "com.google.Chrome"
         }
       ],
-      "minutes": 30,
-      "name": "Travel research"
+      "minutes": 15,
+      "name": "Research",
+      "open_web": true,
+      "start_delay_seconds": 30,
+      "weekly_limit": 5
     }
   ],
   "never_allowed_bundle_ids": [

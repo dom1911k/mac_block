@@ -159,6 +159,25 @@ struct PersistentState: Codable {
 
     func used(_ mode: String, on day: String = PersistentState.dayKey()) -> Int { dailyCounts[day]?[mode] ?? 0 }
 
+    /// Monday 00:00 local time of the current week.
+    static func weekStart(_ now: Date = Date()) -> Date {
+        var cal = Calendar(identifier: .iso8601)   // weeks start on Monday
+        cal.timeZone = .current
+        return cal.dateInterval(of: .weekOfYear, for: now)?.start ?? cal.startOfDay(for: now)
+    }
+
+    /// Sessions of a mode since Monday 00:00.
+    func usedThisWeek(_ mode: String, now: Date = Date()) -> Int {
+        let start = PersistentState.weekStart(now)
+        var total = 0
+        var day = start
+        while day <= now {
+            total += used(mode, on: PersistentState.dayKey(day))
+            day = day.addingTimeInterval(86400)
+        }
+        return total
+    }
+
     mutating func increment(_ mode: String) {
         let day = PersistentState.dayKey()
         dailyCounts[day, default: [:]][mode, default: 0] += 1

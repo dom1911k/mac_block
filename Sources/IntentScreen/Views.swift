@@ -28,8 +28,10 @@ struct LockView: View {
                 }
 
                 if let st = model.status {
-                    if let id = model.selectedMode, let mode = st.modes.first(where: { $0.id == id }) {
-                        IntentEntry(model: model, mode: mode, minWords: st.intentMinWords)
+                    if st.pendingModeId != nil {
+                        PendingStartView(model: model, status: st)
+                    } else if let id = model.selectedMode, let mode = st.modes.first(where: { $0.id == id }) {
+                        IntentEntry(model: model, mode: mode, minWords: mode.intentMinWords)
                     } else {
                         ModeGrid(model: model, modes: st.modes)
                     }
@@ -65,7 +67,14 @@ struct ModeGrid: View {
                 } label: {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(m.name).font(.system(size: 20, weight: .medium))
+                            HStack(spacing: 8) {
+                                Text(m.name).font(.system(size: 20, weight: .medium))
+                                if m.openWeb {
+                                    Text("OPEN WEB").font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(RoundedRectangle(cornerRadius: 4).fill(accent.opacity(0.35)))
+                                }
+                            }
                             if let d = m.description { Text(d).font(.system(size: 13)).opacity(0.65) }
                         }
                         Spacer()
@@ -88,9 +97,36 @@ struct ModeGrid: View {
     }
 
     private func usage(_ m: ModeStatus) -> String {
-        guard let l = m.dailyLimit else { return "no daily limit" }
-        let left = max(0, l - m.usedToday)
-        return "\(left) of \(l) left today"
+        var parts: [String] = []
+        if let l = m.dailyLimit { parts.append("\(max(0, l - m.usedToday)) of \(l) left today") }
+        if let w = m.weeklyLimit { parts.append("\(max(0, w - m.usedThisWeek)) of \(w) this week") }
+        return parts.isEmpty ? "no limit" : parts.joined(separator: " · ")
+    }
+}
+
+/// The pause between pressing Start and an open-web session opening.
+struct PendingStartView: View {
+    @ObservedObject var model: AppModel
+    let status: DaemonStatus
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("\(status.pendingModeName ?? "Session") opens in \(status.pendingReadyIn ?? 0) s")
+                .font(.system(size: 26, weight: .semibold).monospacedDigit())
+                .foregroundColor(.white)
+            if let intent = status.pendingIntent {
+                Text("“\(intent)”")
+                    .font(.system(size: 15)).foregroundColor(.white.opacity(0.75))
+                    .multilineTextAlignment(.center).lineLimit(4)
+            }
+            Text("Still the right thing to do? You can cancel without using up a session.")
+                .font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
+            Button("Cancel") { model.cancelPendingStart() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 14).fill(card))
     }
 }
 
@@ -104,7 +140,9 @@ struct IntentEntry: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(mode.name) · \(mode.minutes) minutes")
                 .font(.system(size: 22, weight: .medium)).foregroundColor(.white)
-            Text("Type exactly what you're going to do — at least \(minWords) words. Pasting is turned off.")
+            Text(mode.startDelaySeconds > 0
+                 ? "Type exactly what you're going to look for — at least \(minWords) words. After Start there's a \(mode.startDelaySeconds)-second pause. Pasting is turned off."
+                 : "Type exactly what you're going to do — at least \(minWords) words. Pasting is turned off.")
                 .font(.system(size: 14)).foregroundColor(.white.opacity(0.7))
             NoPasteTextEditor(text: $model.intentText)
                 .frame(height: 130)

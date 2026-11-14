@@ -38,6 +38,11 @@ public struct ModeStatus: Codable, Identifiable {
     public var usedToday: Int
     public var available: Bool
     public var unavailableReason: String?
+    public var weeklyLimit: Int?
+    public var usedThisWeek: Int = 0
+    public var openWeb: Bool = false
+    public var intentMinWords: Int = 8
+    public var startDelaySeconds: Int = 0
 
     public init(id: String, name: String, description: String?, minutes: Int, dailyLimit: Int?,
                 usedToday: Int, available: Bool, unavailableReason: String?) {
@@ -71,6 +76,11 @@ public struct DaemonStatus: Codable {
     public var notice: String?
     /// Set during a test install: when (seconds since 1970) it switches itself off.
     public var testEndsAt: Double?
+    /// A start that is waiting out its start_delay_seconds.
+    public var pendingModeId: String?
+    public var pendingModeName: String?
+    public var pendingIntent: String?
+    public var pendingReadyIn: Int?
 
     public init(state: String, modeId: String? = nil, modeName: String? = nil, intent: String? = nil,
                 endsAt: Double? = nil, remainingSeconds: Int? = nil, warning: Bool = false,
@@ -93,6 +103,8 @@ public struct IPCResponse: Codable {
     public var status: DaemonStatus?
     public var launch: [LaunchItem]?
     public var lines: [String]?
+    /// Set when `start` has to wait: confirm with `start_confirm` after this many seconds.
+    public var waitSeconds: Int?
 
     public init(ok: Bool, error: String? = nil, message: String? = nil, status: DaemonStatus? = nil,
                 launch: [LaunchItem]? = nil, lines: [String]? = nil) {

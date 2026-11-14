@@ -37,6 +37,9 @@ import json, sys
 c = json.load(open(sys.argv[1]))
 c["locked_allowed_domains"] += ["github.com", "githubusercontent.com", "githubassets.com", "githubapp.com",
                                 "windows.net", "visualstudio.com", "azure.com", "msftauth.net"]
+for m in c["modes"]:
+    if m["id"] == "research":
+        m["start_delay_seconds"] = 3   # keep CI quick
 print(json.dumps(c, indent=2))
 PY
 
@@ -94,6 +97,19 @@ check  "too-short intent is rejected"      bash -c "! intentmode start journal t
 check  "session ends"                      intentmode end automated test finished
 sleep 2
 refuse "pypi.org blocked again after end"  fetch https://pypi.org
+
+echo "== Research (open web) =="
+check  "research session starts (after its pause)"  intentmode start research looking up used car prices on some dealer websites for my trip planning
+sleep 2
+shot 3-research
+check  "https://example.com loads (open web)"       fetch https://example.com
+check  "https://www.wikipedia.org loads"            fetch https://www.wikipedia.org
+check  "reddit.com refused (distraction list)"      nxdomain www.reddit.com
+check  "youtube.com refused (distraction list)"     nxdomain www.youtube.com
+check  "status shows weekly usage"                  bash -c "intentmode status | grep -q 'week 1/5'"
+check  "research session ends"                      intentmode end done researching
+sleep 2
+refuse "example.com blocked again after research"   fetch https://example.com
 
 echo "== Uninstall restores everything =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1
