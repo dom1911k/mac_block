@@ -30,7 +30,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "== Preparing CI config (GitHub domains allowed while locked) =="
+prep_config() {
 sudo mkdir -p "$BASE"
 python3 - "$PKG/Resources/config.default.json" <<'PY' | sudo tee "$BASE/config.json" >/dev/null
 import json, sys
@@ -47,6 +47,9 @@ for m in c["modes"]:
         m["start_delay_seconds"] = 3   # keep CI quick
 print(json.dumps(c, indent=2))
 PY
+}
+echo "== Preparing CI config (GitHub domains allowed while locked) =="
+prep_config
 
 echo "== Installing in test mode (5 min) =="
 echo "console user: $(stat -f %Su /dev/console)"
@@ -187,6 +190,21 @@ check  "lock screen shows today's usage"           bash -c "intentmode status >/
 
 check  "config upgrader keeps a disabled bedtime off" bash -c "! intentmode status | grep -q Bedtime && ! grep -q 'added setting .bedtime' '$BASE/daemon.log'"
 
+echo "== Uninstall restores everything =="
+sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1
+sleep 3
+refuse "daemon is gone"                    sudo launchctl print system/com.intentmode.daemon
+refuse "DNS no longer 127.0.0.1"           bash -c "networksetup -getdnsservers '$SVC' | grep -q '^127.0.0.1$'"
+refuse "pf anchor removed"                 bash -c "sudo pfctl -a com.apple/000.intentmode -s rules 2>/dev/null | grep -q block"
+check  "https://example.com works again"   fetch https://example.com
+check  "logs were kept"                    test -f /Users/Shared/IntentMode/last-logs/daemon.log
+
+echo "== Permanent install =="
+prep_config
+check  "permanent install works"                   bash -c "echo INSTALL | sudo bash '$PKG/install.sh' >/dev/null 2>&1"
+sleep 10
+check  "daemon runs from /Library/LaunchDaemons"   sudo launchctl print system/com.intentmode.daemon
+
 echo "== Lock-down (Phase 4, for a dummy account so this runner keeps sudo) =="
 cat > /tmp/im_ld.py <<'PY'
 import json, socket, sys
@@ -248,14 +266,11 @@ check  "lock-down can be turned on again"           sudo intentmode lockdown ena
 refuse "…but the one-time turn-off is used up"      python3 /tmp/im_ld.py escape
 refuse "…so it can't be requested again"            intentmode lockdown disable
 
-echo "== Uninstall restores everything =="
+echo "== Removing the permanent install =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1
 sleep 3
-refuse "daemon is gone"                    sudo launchctl print system/com.intentmode.daemon
-refuse "DNS no longer 127.0.0.1"           bash -c "networksetup -getdnsservers '$SVC' | grep -q '^127.0.0.1$'"
-refuse "pf anchor removed"                 bash -c "sudo pfctl -a com.apple/000.intentmode -s rules 2>/dev/null | grep -q block"
-check  "https://example.com works again"   fetch https://example.com
-check  "logs were kept"                    test -f /Users/Shared/IntentMode/last-logs/daemon.log
+refuse "daemon is gone again"                      sudo launchctl print system/com.intentmode.daemon
+check  "https://example.com works after removal"   fetch https://example.com
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
