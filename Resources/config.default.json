@@ -244,6 +244,11 @@
       "=ogs.google.com",
       "=lh3.googleusercontent.com"
     ],
+    "japanese": [
+      "jpdb.io",
+      "ankiweb.net",
+      "ankiuser.net"
+    ],
     "reselling": [
       "goofish.com",
       "taobao.com",
@@ -373,6 +378,47 @@
       ],
       "minutes": 20,
       "name": "Journal"
+    },
+    {
+      "allow_extension": false,
+      "apps": [
+        {
+          "bundle_id": "com.google.Chrome",
+          "team_id": "EQHXZ8M8AV"
+        }
+      ],
+      "description": "jpdb and AnkiWeb — every morning 08:00–10:30",
+      "domains": [
+        "@japanese"
+      ],
+      "id": "japanese",
+      "intent_min_words": 5,
+      "launch": [
+        {
+          "args": [
+            "https://jpdb.io",
+            "https://ankiweb.net/decks"
+          ],
+          "bundle_id": "com.google.Chrome"
+        }
+      ],
+      "minutes": 150,
+      "name": "Japanese",
+      "schedule": [
+        {
+          "days": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "sun"
+          ],
+          "end": "10:30",
+          "start": "08:00"
+        }
+      ]
     },
     {
       "allow_extension": true,
