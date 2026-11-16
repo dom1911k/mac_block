@@ -1,6 +1,6 @@
 // The version line is rewritten by scripts/build.sh from the VERSION file.
 public enum BuildInfo {
-    public static let version = "0.4.1"
+    public static let version = "0.4.2"
 
     /// Dev builds include `learn`, `emergency-off` and the emergency button on the intent screen.
     /// Release builds (Phase 4) are compiled with INTENTMODE_RELEASE and drop them.
@@ -9,6 +9,16 @@ public enum BuildInfo {
     #else
     public static let isDevBuild = true
     #endif
+}
+
+public enum LockdownSupport {
+    /// The oldest version that fully supports lock-down. During lock-down, (auto-)rollback never goes below it:
+    /// older versions don't know lock-down, so they'd reopen escape routes and leave sudo blocked forever.
+    public static let minimumVersion = "0.4.2"
+    public static var active: Bool { FileManager.default.fileExists(atPath: Paths.base + "/lockdown.json") }
+    public static func allowsRollback(to v: String) -> Bool {
+        !active || !VersionCompare.isNewer(minimumVersion, than: v)
+    }
 }
 
 public enum VersionCompare {

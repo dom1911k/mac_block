@@ -41,7 +41,7 @@ Start it with **Start Lock-down.command**. It asks for your Mac password one las
 confirm. From then on:
 
 - **`sudo` doesn't work** for your account. Emergency off, Stop Intent Mode and `learn` are disabled.
-- **Settings:** use **Edit Settings.command**. Tightening (shorter, fewer sites, lower limits) applies at once.
+- **Settings:** use **Edit Settings.command**, during a Claude session, since it needs Terminal. It opens the settings in the nano editor: arrow keys to move, Control-O then Return to save, Control-X to quit. Tightening (shorter, fewer sites, lower limits) applies at once.
   Anything that loosens waits **24 hours** and shows as ⏳ pending on the lock screen, where you can cancel it.
   Editing `config.json` directly doesn't work: a loosening edit is undone within seconds.
 - **Updates** (Update Intent Mode.command) are checked right away but install **24 hours** later.

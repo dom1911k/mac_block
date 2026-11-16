@@ -91,8 +91,11 @@ final class Updater {
         let fm = FileManager.default
         guard let target = st.knownGood.reversed().first(where: {
             $0 != BuildInfo.version && fm.fileExists(atPath: Paths.versions + "/" + $0 + "/bin/intentmoded")
+                && LockdownSupport.allowsRollback(to: $0)
         }) else {
-            throw UpdateError(description: "no earlier known-good version is installed")
+            throw UpdateError(description: LockdownSupport.active
+                ? "no earlier known-good version that supports lock-down (\(LockdownSupport.minimumVersion) or newer) is installed"
+                : "no earlier known-good version is installed")
         }
         st.knownGood.removeAll { $0 == BuildInfo.version }   // the version we're leaving is no longer trusted
         st.previous = BuildInfo.version

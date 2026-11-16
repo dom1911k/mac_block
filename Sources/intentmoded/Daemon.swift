@@ -47,6 +47,7 @@ final class Daemon {
     private var chromePolicyMissing = false
     private var statsCache: (at: Date, stats: WeekStats)?
     private var macUpdateAvailable = false
+    private let clock = TrustedClock()
     private var lockdown: LockdownState? = Lockdown.load()
     private var pending: [PendingChange] = Lockdown.loadPending()
     private var macUpdateName: String?
@@ -149,7 +150,7 @@ final class Daemon {
 
         queue.sync {
             if let s = pstate.session {
-                if s.endsAt > Date(), config.mode(s.modeId) != nil {
+                if s.endsAt > clock.now(), config.mode(s.modeId) != nil {
                     phase = .session
                     Log.info("resuming \(s.modeId) session until \(s.endsAt)")
                 } else {
@@ -199,7 +200,12 @@ final class Daemon {
 
     private func tick() {
         tickCount += 1
-        let now = Date()
+        let jumped = clock.tick()
+        if jumped || tickCount % 600 == 3 {
+            let up = config.upstreamDns
+            DispatchQueue.global().async { [clock] in clock.syncWithNetwork(upstream: up) }
+        }
+        let now = clock.now()
         if let t = testEndsAt, now >= t, !testStopping {
             Log.warn("test time is over; removing Intent Mode")
             _ = stopTest()
@@ -446,7 +452,7 @@ final class Daemon {
             guard var l = lockdown else { return .fail("Lock-down is not on.") }
             guard l.escapeAvailable else { return .fail("The one-time turn-off is no longer available.") }
             guard l.disableRequestedAt == nil else { return .fail("Turn-off is already requested.") }
-            l.disableRequestedAt = Date().timeIntervalSince1970
+            l.disableRequestedAt = clock.now().timeIntervalSince1970
             lockdown = l; Lockdown.save(l)
             Log.warn("lock-down turn-off requested (takes effect in \(config.disableDelayHours) h)")
             SessionLog.write(["event": "lockdown_disable_requested"])
@@ -486,7 +492,7 @@ final class Daemon {
             if lockdown != nil {
                 do {
                     let (v, changelog) = try updater.stage(path: p)
-                    let due = Date().addingTimeInterval(config.looseningDelayHours * 3600)
+                    let due = clock.now().addingTimeInterval(config.looseningDelayHours * 3600)
                     pending.removeAll { $0.kind == "update" && $0.version == v }
                     pending.append(PendingChange(id: UUID().uuidString, kind: "update", description: "Update to \(v)",
                                                  dueAt: due.timeIntervalSince1970, version: v, changelog: changelog))
@@ -538,7 +544,7 @@ final class Daemon {
     }
 
     private func availability(_ m: ModeConfig) -> (Bool, String?) {
-        let now = Date()
+        let now = clock.now()
         if let b = config.bedtime, let end = b.endIfActive(at: now), !b.allowedModes.contains(m.id) {
             return (false, "Bedtime until \(Self.clock(end))")
         }
@@ -591,11 +597,11 @@ final class Daemon {
             st.lockdownEscapeAvailable = l.escapeAvailable
             st.lockdownDisableHours = config.disableDelayHours
             if let req = l.disableRequestedAt {
-                st.lockdownDisableIn = max(0, Int(req + config.disableDelayHours * 3600 - Date().timeIntervalSince1970))
+                st.lockdownDisableIn = max(0, Int(req + config.disableDelayHours * 3600 - clock.now().timeIntervalSince1970))
             }
         }
         st.pending = pending.map { PendingItem(id: $0.id, kind: $0.kind, description: $0.description,
-                                               dueIn: max(0, Int($0.dueAt - Date().timeIntervalSince1970))) }
+                                               dueIn: max(0, Int($0.dueAt - clock.now().timeIntervalSince1970))) }
         st.macUpdateName = macUpdateName
         st.escapeReasonMinWords = config.escapeReasonMinWords
         if let e = escape {
@@ -609,7 +615,7 @@ final class Daemon {
         let today = StatsBuilder.today(statsCache!.stats)
         st.todayMinutes = today.minutes
         st.todaySessions = today.sessions
-        if let b = config.bedtime, let end = b.endIfActive(at: Date()) {
+        if let b = config.bedtime, let end = b.endIfActive(at: clock.now()) {
             let names = b.allowedModes.compactMap { config.mode($0)?.name }
             st.bedtimeNotice = "Bedtime until \(Self.clock(end))" + (names.isEmpty ? " — everything is locked" : " — only \(names.joined(separator: ", "))")
         }
@@ -629,7 +635,7 @@ final class Daemon {
         case .session:
             guard let s = pstate.session else { break }
             let mode = config.mode(s.modeId)
-            let remaining = max(0, Int(s.endsAt.timeIntervalSinceNow.rounded()))
+            let remaining = max(0, Int(s.endsAt.timeIntervalSince(clock.now()).rounded()))
             st.state = "session"
             st.modeId = s.modeId
             st.modeName = mode?.name ?? s.modeId
@@ -693,7 +699,7 @@ final class Daemon {
         guard lockdown == nil else { return .fail("Lock-down is already on.") }
         guard let user = r.username ?? consoleUID().flatMap(userName), user != "root" else { return .fail("Couldn't tell which account to lock down.") }
         if let err = Lockdown.installSudoersRule(user: user) { return .fail("Couldn't block sudo: \(err)") }
-        let l = LockdownState(enabledAt: Date().timeIntervalSince1970, user: user, escapeAvailable: !Lockdown.escapeWasUsed, disableRequestedAt: nil)
+        let l = LockdownState(enabledAt: clock.now().timeIntervalSince1970, user: user, escapeAvailable: !Lockdown.escapeWasUsed, disableRequestedAt: nil)
         lockdown = l
         Lockdown.save(l)
         Log.warn("LOCK-DOWN ON for '\(user)' (one-time turn-off available: \(l.escapeAvailable))")
@@ -714,7 +720,7 @@ final class Daemon {
 
     /// Every 5 s: keep the sudo rule in place, finish a requested turn-off, apply due pending changes.
     private func lockdownTick() {
-        let now = Date().timeIntervalSince1970
+        let now = clock.now().timeIntervalSince1970
         if let l = lockdown {
             if !FileManager.default.fileExists(atPath: Lockdown.sudoersPath) {
                 Log.warn("lock-down: sudo rule was removed — restoring it")
@@ -772,7 +778,7 @@ final class Daemon {
         do { try FileUtil.writeAtomically(data, to: file, mode: 0o600) } catch { return .fail("\(error)") }
         let desc = "Settings: " + diff.loosening.prefix(3).joined(separator: ", ") + (diff.loosening.count > 3 ? " …" : "")
         pending.append(PendingChange(id: id, kind: "config", description: desc,
-                                     dueAt: Date().addingTimeInterval(config.looseningDelayHours * 3600).timeIntervalSince1970,
+                                     dueAt: clock.now().addingTimeInterval(config.looseningDelayHours * 3600).timeIntervalSince1970,
                                      file: file, baseHash: Lockdown.sha(Paths.config)))
         Lockdown.savePending(pending)
         SessionLog.write(["event": "config_proposed", "loosening": diff.loosening])
@@ -864,7 +870,7 @@ final class Daemon {
 
     private func beginSession(mode: ModeConfig, intent text: String, uid: uid_t) -> IPCResponse {
         pendingStart = nil
-        let now = Date()
+        let now = clock.now()
         let ends = capAtBedtime(now.addingTimeInterval(Double(mode.minutes) * 60), mode: mode, now: now)
         guard ends.timeIntervalSince(now) >= 60 else { return .fail("Less than a minute left in this mode's time window.") }
         pstate.session = SessionRecord(modeId: mode.id, intent: text, startedAt: now, endsAt: ends, extended: false)
@@ -886,7 +892,7 @@ final class Daemon {
                           "ended_early": early, "reason": reason])
         pstate.session = nil
         var ended = pstate.lastEnded ?? [:]
-        ended[s.modeId] = Date()
+        ended[s.modeId] = clock.now()
         pstate.lastEnded = ended
         pstate.save()
         phase = .locked
@@ -917,7 +923,7 @@ final class Daemon {
             return .fail("Give a reason of at least \(config.extensionMinReasonWords) words.")
         }
         if let mode = config.mode(s.modeId) {
-            s.endsAt = capAtBedtime(s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60), mode: mode, now: Date())
+            s.endsAt = capAtBedtime(s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60), mode: mode, now: clock.now())
         } else {
             s.endsAt = s.endsAt.addingTimeInterval(Double(config.extensionMinutes) * 60)
         }

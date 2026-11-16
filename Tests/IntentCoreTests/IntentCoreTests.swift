@@ -68,6 +68,22 @@ final class DNSTests: XCTestCase {
         ])
     }
 
+    func testFuzzRandomPacketsNeverCrash() {
+        var rng = SystemRandomNumberGenerator()
+        for _ in 0..<20_000 {
+            let len = Int.random(in: 0...300, using: &rng)
+            var b = (0..<len).map { _ in UInt8.random(in: 0...255, using: &rng) }
+            _ = DNSMessage.parseQuestion(b)
+            _ = DNSMessage.addresses(in: b)
+            _ = DNSMessage.addressRecords(in: b)
+            if len >= 12 { b[4] = 0; b[5] = 1; b[2] &= 0x7F }   // look like a query
+            if let q = DNSMessage.parseQuestion(b) {
+                _ = DNSMessage.makeResponse(query: b, question: q, rcode: 3)
+                _ = DNSMessage.makeAnswer(query: b, question: q, records: [DNSMessage.Record(type: 1, ttl: 1, rdata: [1, 2, 3, 4])])
+            }
+        }
+    }
+
     func testMalformedDoesNotCrash() {
         XCTAssertNil(DNSMessage.parseQuestion([1, 2, 3]))
         XCTAssertEqual(DNSMessage.addresses(in: [0, 1, 0x81, 0x80, 0, 1, 0, 5, 0, 0, 0, 0, 0xC0, 12]), [])

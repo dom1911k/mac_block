@@ -26,6 +26,8 @@ enum ScreenLog {
 /// UI state + talking to the daemon. The screen enforces nothing; it only asks.
 final class AppModel: ObservableObject {
     @Published var status: DaemonStatus?
+    /// When `status` arrived (the countdown runs from the daemon's remainingSeconds, not the Mac's clock).
+    var statusAt = Date()
     @Published var daemonReachable = true
     @Published var selectedMode: String?
     @Published var intentText = ""
@@ -71,6 +73,7 @@ final class AppModel: ObservableObject {
                 if let s = r?.status {
                     if self.status?.state != s.state { ScreenLog.write("daemon state → \(s.state) \(s.modeId ?? "")") }
                     self.status = s
+                    self.statusAt = Date()
                     self.daemonReachable = true
                     self.lastPollError = nil
                 } else {

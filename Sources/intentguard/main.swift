@@ -66,7 +66,8 @@ func rollback(_ state: UpdateState, failed: String) {
     let fm = FileManager.default
     var st = state
     let candidates = ([st.previous].compactMap { $0 } + st.knownGood.reversed())
-        .filter { $0 != failed && fm.fileExists(atPath: Paths.versions + "/" + $0 + "/bin/intentmoded") }
+        .filter { $0 != failed && fm.fileExists(atPath: Paths.versions + "/" + $0 + "/bin/intentmoded")
+                  && LockdownSupport.allowsRollback(to: $0) }
     guard let target = candidates.first else {
         glog("ROLLBACK IMPOSSIBLE: no other version installed. Keeping \(failed).")
         st.pending = nil
@@ -88,6 +89,7 @@ func rollback(_ state: UpdateState, failed: String) {
 }
 
 glog("intentguard \(BuildInfo.version) starting")
+var shortRuns = 0   // consecutive runs that died within 20 s
 
 while true {
     let state = UpdateState.load()
@@ -132,6 +134,16 @@ while true {
 
     if let st = UpdateState.load(), let p = st.pending, !healthy {
         rollback(st, failed: p)
+        shortRuns = 0
+    } else {
+        // A version that keeps crashing right after start (not just a fresh update): go back to the previous
+        // known-good one, so you're never stuck with a dead daemon.
+        shortRuns = Date().timeIntervalSince(started) < 20 ? shortRuns + 1 : 0
+        if shortRuns >= 5, let st = UpdateState.load() {
+            glog("daemon crashed \(shortRuns) times in a row right after starting")
+            rollback(st, failed: st.current)
+            shortRuns = 0
+        }
     }
     // Avoid a tight crash loop.
     sleep(Date().timeIntervalSince(started) < 10 ? 5 : 1)

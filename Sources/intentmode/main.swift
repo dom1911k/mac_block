@@ -20,7 +20,7 @@ Updates:
   intentmode update list                  Show installed versions
 
 Settings and lock-down:
-  intentmode config edit                  Edit the settings in TextEdit; loosening changes wait 24 h in lock-down
+  intentmode config edit                  Edit the settings (nano); loosening changes wait 24 h in lock-down
   intentmode pending [cancel <id>]        Show / cancel changes that are waiting
   sudo intentmode lockdown enable         Turn on lock-down (Phase 4)
   intentmode lockdown status | disable | cancel | keep
@@ -162,9 +162,22 @@ case "config":
             if FileManager.default.fileExists(atPath: copy) { try FileManager.default.removeItem(atPath: copy) }
             try FileManager.default.copyItem(atPath: Paths.config, toPath: copy)
         } catch { die("Couldn't copy the settings: \(error)") }
-        print("Opening \(copy) in TextEdit. Make your changes, save (⌘S), then come back here and press Enter.")
-        _ = run_open(["-e", copy])
+        // nano runs inside the Terminal window (TextEdit would be closed by the app watcher).
+        print("""
+            Opening the settings in the nano editor, right here in Terminal.
+              • Move with the arrow keys, type to change things.
+              • Save: Control-O, then Return.   Quit: Control-X.
+
+            Press Return to start…
+            """, terminator: "")
         _ = readLine()
+        let editor = Process()
+        editor.executableURL = URL(fileURLWithPath: "/usr/bin/nano")
+        editor.arguments = [copy]
+        editor.standardInput = FileHandle.standardInput
+        editor.standardOutput = FileHandle.standardOutput
+        editor.standardError = FileHandle.standardError
+        do { try editor.run(); editor.waitUntilExit() } catch { die("Couldn't start nano: \(error)") }
         call(IPCRequest(cmd: "config_propose", path: copy))
     case "propose":
         guard args.count >= 3 else { die("usage: intentmode config propose <file>") }

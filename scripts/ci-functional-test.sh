@@ -224,6 +224,9 @@ if what == "pending":   print(len(st["pending"])); sys.exit(0)
 if what == "minutes":   print([m["minutes"] for m in st["modes"] if m["id"] == sys.argv[2]][0]); sys.exit(0)
 if what == "active":    sys.exit(0 if st["lockdownActive"] else 1)
 if what == "escape":    sys.exit(0 if st["lockdownEscapeAvailable"] else 1)
+if what == "cancel_all":
+    for p in st["pending"]: call({"cmd": "pending_cancel", "noteId": p["id"]})
+    sys.exit(0)
 PY
 edit_cfg() {  # edit_cfg <python expression on c> → writes ~/im-test-settings.json
   python3 - "$1" <<'PY'
@@ -265,6 +268,38 @@ check  "sudo rule removed"                          bash -c "! sudo test -f /etc
 check  "lock-down can be turned on again"           sudo intentmode lockdown enable --user imtest --yes
 refuse "…but the one-time turn-off is used up"      python3 /tmp/im_ld.py escape
 refuse "…so it can't be requested again"            intentmode lockdown disable
+
+echo "== Lock-down: system clock jump =="
+edit_cfg 'next(m for m in c["modes"] if m["id"]=="journal")["minutes"]=40'
+check  "a loosening change is pending"              intentmode config propose ~/im-test-settings.json
+sudo date -u "$(date -u -v+3H +%m%d%H%M%Y)" >/dev/null
+echo "  (clock moved 3 hours ahead: $(date))"
+sleep 8
+check  "the jump was noticed"                       grep -q "system clock was changed" "$BASE/daemon.log"
+check  "…and the change is still pending"           test "$(python3 /tmp/im_ld.py pending)" = 1
+check  "…not applied early"                         test "$(python3 /tmp/im_ld.py minutes journal)" = 25
+sudo date -u "$(date -u -v-3H +%m%d%H%M%Y)" >/dev/null
+echo "  (clock moved back: $(date))"
+sleep 3
+check  "pending changes can be cancelled"           python3 /tmp/im_ld.py cancel_all
+check  "…and the list is empty"                     test "$(python3 /tmp/im_ld.py pending)" = 0
+
+echo "== Lock-down: update waits, then installs; rollback stays possible =="
+OLDVER="$VER"
+echo "9.9.9" > VERSION
+check  "a newer build (9.9.9) can be built"         bash -c "bash scripts/build.sh 'ci update test' >/dev/null 2>&1"
+echo "$OLDVER" > VERSION
+check  "the update is accepted as pending"          intentmode update propose "$PWD/build/IntentMode-9.9.9.tar.gz"
+check  "…and the old version keeps running"         bash -c "intentmode version | grep -q '^$OLDVER'"
+echo "  (waiting for the 36-second delay…)"
+sleep 50
+check  "the update installed after its delay"       bash -c "intentmode version | grep -q '^9.9.9'"
+check  "lock-down is still on after the update"     python3 /tmp/im_ld.py active
+check  "sudo rule still in place"                   sudo test -f /etc/sudoers.d/zz-intentmode-lockdown
+check  "rollback works during lock-down"            intentmode update rollback
+sleep 12
+check  "…back on $OLDVER"                           bash -c "intentmode version | grep -q '^$OLDVER'"
+check  "…with lock-down still on"                   python3 /tmp/im_ld.py active
 
 echo "== Removing the permanent install =="
 sudo bash "$BASE/uninstall.sh" --yes >/dev/null 2>&1

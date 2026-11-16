@@ -570,7 +570,7 @@ struct SessionView: View {
 
     var body: some View {
         let st = model.status
-        let remaining = Int(((st?.endsAt).map { Date(timeIntervalSince1970: $0) } ?? model.now).timeIntervalSince(model.now).rounded(.up))
+        let remaining = max(0, (st?.remainingSeconds ?? 0) - Int(model.now.timeIntervalSince(model.statusAt)))
         let warning = st?.warning == true
         VStack(alignment: .leading, spacing: 8) {
             TestBanner(model: model, compact: true)
