@@ -161,6 +161,18 @@ final class Daemon {
             }
             applyPolicy(reason: "startup")
         }
+        apps.onScreenCrashLoop = { [weak self] in
+            self?.queue.async {
+                guard let self else { return }
+                // Only for versions that were just installed by an update; never loop rollbacks.
+                guard let st = UpdateState.load(), st.previous != nil else { return }
+                do {
+                    let msg = try self.updater.rollback()
+                    Log.warn("intent screen crash loop → \(msg)")
+                    self.restartSoon()
+                } catch { Log.error("intent screen crash loop, but no rollback possible: \(error)") }
+            }
+        }
         apps.start()
 
         let t = DispatchSource.makeTimerSource(queue: queue)

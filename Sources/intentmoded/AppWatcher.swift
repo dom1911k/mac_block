@@ -34,6 +34,10 @@ final class AppWatcher {
     private var bundleIds: [String: String] = [:]
     private var termSent: [pid_t: (start: UInt64, at: Date)] = [:]
     private var lastScreenSeen = Date()
+    /// When each new intent-screen process was first seen (to notice a crash loop).
+    private var screenStarts: [(pid: pid_t, at: Date)] = []
+    /// Called when the intent screen keeps crashing (6 new processes within 2 minutes).
+    var onScreenCrashLoop: (() -> Void)?
     private var timer: DispatchSourceTimer?
     private var scans = 0
 
@@ -92,7 +96,17 @@ final class AppWatcher {
                 }
             }
             switch entry.decision {
-            case .screen: screenRunning = true
+            case .screen:
+                screenRunning = true
+                if !screenStarts.contains(where: { $0.pid == pid }) {
+                    screenStarts.append((pid, Date()))
+                    screenStarts = screenStarts.filter { Date().timeIntervalSince($0.at) < 120 }
+                    if screenStarts.count >= 6 {
+                        Log.error("the intent screen keeps crashing (\(screenStarts.count) starts in 2 minutes)")
+                        screenStarts.removeAll()
+                        onScreenCrashLoop?()
+                    }
+                }
             case .kill: enforce(pid: pid, start: start)
             case .allow: break
             }
@@ -170,6 +184,9 @@ final class AppWatcher {
     private func outerBundle(_ path: String) -> String? {
         guard let r = path.range(of: ".app/") else { return nil }
         if let f = path.range(of: ".framework/"), f.lowerBound < r.lowerBound { return nil }
+        // Compilers and tools inside Xcode.app (…/Xcode.app/Contents/Developer/…) are command-line tools too;
+        // Xcode's own window (Contents/MacOS/Xcode) is still treated as an app.
+        if path.contains(".app/Contents/Developer/") { return nil }
         return String(path[..<r.lowerBound]) + ".app"
     }
 
